@@ -64,19 +64,30 @@ namespace IconBrowser.Data
             return await FetchAsync($"{BASE_URL}/{prefix}/{name}.svg");
         }
 
+        const int MAX_RETRIES = 2;
+
         static async Task<string> FetchAsync(string url)
         {
-            var request = UnityWebRequest.Get(url);
-            request.timeout = 15;
-            var op = request.SendWebRequest();
-            var tcs = new TaskCompletionSource<bool>();
-            op.completed += _ => tcs.SetResult(true);
-            await tcs.Task;
+            Exception lastError = null;
+            for (int attempt = 0; attempt <= MAX_RETRIES; attempt++)
+            {
+                var request = UnityWebRequest.Get(url);
+                request.timeout = 15;
+                var op = request.SendWebRequest();
+                var tcs = new TaskCompletionSource<bool>();
+                op.completed += _ => tcs.SetResult(true);
+                await tcs.Task;
 
-            if (request.result != UnityWebRequest.Result.Success)
-                throw new Exception($"Iconify API error: {request.error} ({url})");
+                if (request.result == UnityWebRequest.Result.Success)
+                    return request.downloadHandler.text;
 
-            return request.downloadHandler.text;
+                lastError = new Exception($"Iconify API error: {request.error} ({url})");
+                request.Dispose();
+
+                if (attempt < MAX_RETRIES)
+                    await Task.Delay(500 * (attempt + 1));
+            }
+            throw lastError;
         }
 
         #region JSON Parsing (manual — avoids Newtonsoft dependency)

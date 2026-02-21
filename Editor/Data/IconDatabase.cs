@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -29,52 +28,6 @@ namespace IconBrowser.Data
         public event Action OnLocalIconsChanged;
 
         /// <summary>
-        /// Migrates flat-structure icons ({IconsPath}/{name}.svg) into prefix subfolders ({IconsPath}/{prefix}/{name}.svg).
-        /// Uses the manifest to determine each icon's prefix. Runs once automatically; safe to remove after all users migrate.
-        /// </summary>
-        void MigrateFlatToPrefix()
-        {
-            var iconsPath = IconBrowserSettings.IconsPath;
-            var fullIconsDir = Path.GetFullPath(iconsPath);
-            if (!Directory.Exists(fullIconsDir)) return;
-
-            var manifest = IconManifest.GetAll();
-            if (manifest.Count == 0) return;
-
-            bool moved = false;
-            foreach (var kv in manifest)
-            {
-                var name = kv.Key;
-                var prefix = kv.Value;
-                var oldAssetPath = $"{iconsPath}/{name}.svg";
-                var oldFullPath = Path.GetFullPath(oldAssetPath);
-
-                if (!File.Exists(oldFullPath)) continue;
-
-                var newDir = $"{iconsPath}/{prefix}";
-                if (!AssetDatabase.IsValidFolder(newDir))
-                    AssetDatabase.CreateFolder(iconsPath, prefix);
-
-                var newAssetPath = $"{newDir}/{name}.svg";
-                var err = AssetDatabase.MoveAsset(oldAssetPath, newAssetPath);
-                if (string.IsNullOrEmpty(err))
-                {
-                    moved = true;
-                }
-                else
-                {
-                    Debug.LogWarning($"[IconBrowser] Migration failed for '{name}': {err}");
-                }
-            }
-
-            if (moved)
-            {
-                AssetDatabase.Refresh();
-                Debug.Log("[IconBrowser] Migrated flat icons to prefix subfolders.");
-            }
-        }
-
-        /// <summary>
         /// Scans the entire project for SVG VectorImage assets.
         /// </summary>
         public void ScanLocalIcons()
@@ -82,8 +35,6 @@ namespace IconBrowser.Data
             _localIcons.Clear();
             _importedNames.Clear();
             IconManifest.Invalidate();
-
-            MigrateFlatToPrefix();
 
             var manifest = IconManifest.GetAll();
             var guids = AssetDatabase.FindAssets("t:VectorImage");
@@ -274,6 +225,7 @@ namespace IconBrowser.Data
             try
             {
                 var result = await IconifyClient.SearchAsync(query, prefix, limit);
+                if (result?.Icons == null) return new List<IconEntry>();
                 return result.Icons.Select(fullName =>
                 {
                     var parts = fullName.Split(':');

@@ -67,6 +67,7 @@ namespace IconBrowser.UI
         Dictionary<string, List<IconEntry>> _variantMap = new();
         bool _isLoading;
         bool _initialized;
+        string _pendingSearchQuery;
 
         IVisualElementScheduledItem _debounceHandle;
         IVisualElementScheduledItem _scrollDebounceHandle;
@@ -439,6 +440,7 @@ namespace IconBrowser.UI
         {
             if (_isLoading) return;
             _isLoading = true;
+            _pendingSearchQuery = null;
 
             ShowLoading(true);
             try
@@ -460,6 +462,7 @@ namespace IconBrowser.UI
             {
                 _isLoading = false;
                 ShowLoading(false);
+                DrainPendingSearch();
             }
         }
 
@@ -557,8 +560,13 @@ namespace IconBrowser.UI
 
         async Task SearchRemoteAsync(string query)
         {
-            if (_isLoading) return;
+            if (_isLoading)
+            {
+                _pendingSearchQuery = query;
+                return;
+            }
             _isLoading = true;
+            _pendingSearchQuery = null;
 
             ShowLoading(true);
             try
@@ -570,7 +578,16 @@ namespace IconBrowser.UI
             {
                 _isLoading = false;
                 ShowLoading(false);
+                DrainPendingSearch();
             }
+        }
+
+        void DrainPendingSearch()
+        {
+            if (_pendingSearchQuery == null) return;
+            var query = _pendingSearchQuery;
+            _pendingSearchQuery = null;
+            _ = SearchRemoteAsync(query);
         }
 
         void OnSelected(IconEntry entry)
@@ -824,6 +841,18 @@ namespace IconBrowser.UI
         void ShowLoading(bool loading)
         {
             // Could add a spinner overlay here in the future
+        }
+
+        public void Detach()
+        {
+            _grid.OnIconSelected -= OnSelected;
+            _grid.OnVisibleRangeChanged -= OnVisibleRangeChangedDebounced;
+            _grid.OnSelectionChanged -= OnGridSelectionChanged;
+            _grid.OnQuickImportClicked -= OnImport;
+            _grid.OnQuickDeleteClicked -= OnQuickDelete;
+            _detail.OnImportClicked -= OnImport;
+            _detail.OnVariantSelected -= OnVariantSelected;
+            _detail.OnBatchImportClicked -= OnBatchImport;
         }
     }
 }

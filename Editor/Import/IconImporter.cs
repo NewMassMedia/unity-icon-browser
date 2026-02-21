@@ -100,8 +100,8 @@ ScriptedImporter:
             catch (System.Exception ex)
             {
                 Debug.LogError($"[IconBrowser] Import failed for {prefix}:{name}: {ex.Message}");
-                if (File.Exists(fullPath)) File.Delete(fullPath);
-                if (File.Exists(metaPath)) File.Delete(metaPath);
+                try { if (File.Exists(fullPath)) File.Delete(fullPath); } catch { /* best effort */ }
+                try { if (File.Exists(metaPath)) File.Delete(metaPath); } catch { /* best effort */ }
                 return false;
             }
         }

@@ -22,6 +22,7 @@ namespace IconBrowser.Import
 
         readonly Dictionary<string, IconAtlas> _atlases = new();
         readonly HashSet<string> _pendingKeys = new();
+        readonly HashSet<string> _failedKeys = new();
         readonly Queue<(string prefix, List<string> names, Action onComplete)> _queue = new();
         bool _isProcessing;
 
@@ -47,7 +48,7 @@ namespace IconBrowser.Import
             foreach (var name in names)
             {
                 var key = $"{prefix}_{name}";
-                if (atlas.HasIcon(name) || _pendingKeys.Contains(key))
+                if (atlas.HasIcon(name) || _pendingKeys.Contains(key) || _failedKeys.Contains(key))
                     continue;
                 _pendingKeys.Add(key);
                 toFetch.Add(name);
@@ -132,6 +133,7 @@ namespace IconBrowser.Import
                     }
                     else
                     {
+                        _failedKeys.Add($"{prefix}_{name}");
                         Debug.LogWarning($"[IconBrowser] Failed to load texture for: {path}");
                     }
                 }
@@ -227,6 +229,7 @@ namespace IconBrowser.Import
             // Atlas stays in _atlases dict — it will be reused.
             // Just clear pending operations.
             _pendingKeys.Clear();
+            _failedKeys.Clear();
         }
 
         /// <summary>
@@ -247,6 +250,7 @@ namespace IconBrowser.Import
                 kv.Value.Destroy();
             _atlases.Clear();
             _pendingKeys.Clear();
+            _failedKeys.Clear();
             CleanupTempAssets();
         }
 

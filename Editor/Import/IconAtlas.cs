@@ -166,7 +166,7 @@ namespace IconBrowser.Import
 
         #region Paths
 
-        static string AppDataDir
+        public static string CacheDir
         {
             get
             {
@@ -174,6 +174,8 @@ namespace IconBrowser.Import
                 return Path.Combine(local, "IconBrowser");
             }
         }
+
+        static string AppDataDir => CacheDir;
 
         static string GetAtlasPath(string prefix) => Path.Combine(AppDataDir, $"{prefix}_atlas.png");
         static string GetIndexPath(string prefix) => Path.Combine(AppDataDir, $"{prefix}_atlas.json");

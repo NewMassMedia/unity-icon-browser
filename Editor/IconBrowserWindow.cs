@@ -196,6 +196,48 @@ namespace IconBrowser
             });
             sampleRow.Add(sampleField);
 
+            // --- Cache Settings ---
+            var cacheSection = new VisualElement();
+            cacheSection.AddToClassList("settings-tab__section");
+            root.Add(cacheSection);
+
+            var cacheTitle = new Label("Cache");
+            cacheTitle.AddToClassList("settings-tab__section-title");
+            cacheSection.Add(cacheTitle);
+
+            var cacheRow = new VisualElement();
+            cacheRow.AddToClassList("settings-tab__row");
+            cacheSection.Add(cacheRow);
+
+            var cacheLabel = new Label("Preview Atlas Cache");
+            cacheLabel.AddToClassList("settings-tab__label");
+            cacheRow.Add(cacheLabel);
+
+            var openCacheBtn = new Button(() =>
+            {
+                var dir = IconAtlas.CacheDir;
+                if (System.IO.Directory.Exists(dir))
+                    EditorUtility.RevealInFinder(dir);
+                else
+                    EditorUtility.DisplayDialog("Cache Empty", "No cache folder exists yet.", "OK");
+            }) { text = "Open Folder" };
+            openCacheBtn.AddToClassList("settings-tab__change-btn");
+            cacheRow.Add(openCacheBtn);
+
+            var clearCacheBtn = new Button(() =>
+            {
+                if (!EditorUtility.DisplayDialog("Clear Cache",
+                    "Delete all preview atlas cache files? Previews will be re-downloaded on next browse.",
+                    "Clear", "Cancel"))
+                    return;
+
+                _previewCache?.Destroy();
+                IconAtlas.ClearAllCaches();
+                Debug.Log("[IconBrowser] Preview cache cleared.");
+            }) { text = "Clear Cache" };
+            clearCacheBtn.AddToClassList("settings-tab__change-btn");
+            cacheRow.Add(clearCacheBtn);
+
             return root;
         }
 
@@ -313,6 +355,8 @@ namespace IconBrowser
 
         void OnDestroy()
         {
+            _projectTab?.Detach();
+            _browseTab?.Detach();
             _previewCache?.Destroy();
         }
     }

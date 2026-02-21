@@ -202,5 +202,15 @@ namespace IconBrowser.UI
                 Refresh();
             }
         }
+
+        public void Detach()
+        {
+            _grid.OnIconSelected -= OnSelected;
+            _grid.OnSelectionChanged -= OnGridSelectionChanged;
+            _grid.OnQuickDeleteClicked -= OnDelete;
+            _detail.OnDeleteClicked -= OnDelete;
+            _detail.OnBatchDeleteClicked -= OnBatchDelete;
+            _db.OnLocalIconsChanged -= Refresh;
+        }
     }
 }

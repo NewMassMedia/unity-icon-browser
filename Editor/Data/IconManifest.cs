@@ -206,7 +206,13 @@ namespace IconBrowser.Data
             }
             var result = s.Substring(start, i - start);
             if (i < s.Length) i++;
-            return result;
+            return Unescape(result);
+        }
+
+        static string Unescape(string s)
+        {
+            if (s.IndexOf('\\') < 0) return s;
+            return s.Replace("\\\"", "\"").Replace("\\\\", "\\");
         }
 
         static string Escape(string s)
