@@ -1,66 +1,73 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using IconBrowser.Data;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.UIElements;
 
 namespace IconBrowser.Import
 {
     /// <summary>
-    /// 2-tier SVG preview cache:
-    /// Tier 1: AppData directory (persistent, cross-project) — raw SVG text files
-    /// Tier 2: In-memory Dictionary (session-scoped) — loaded VectorImage assets
-    ///
-    /// Uses a temporary Assets folder for VectorImage conversion via AssetDatabase.
+    /// Atlas-based icon preview cache.
+    /// Each library gets its own 2048x2048 sprite atlas (48x48 per icon, up to 1764 icons).
+    /// First visit: SVG → AssetDatabase import → Texture2D → pack into atlas → save PNG.
+    /// Subsequent visits: Load atlas PNG (single file) → instant.
     /// </summary>
     public class SvgPreviewCache
     {
         const string TEMP_ASSETS_DIR = "Assets/_IconBrowserTemp";
-        const int MAX_BATCH_SIZE = 25;
+        const int MAX_BATCH_SIZE = 100;
 
-        readonly Dictionary<string, VectorImage> _memoryCache = new();
+        readonly Dictionary<string, IconAtlas> _atlases = new();
         readonly HashSet<string> _pendingKeys = new();
         readonly Queue<(string prefix, List<string> names, Action onComplete)> _queue = new();
         bool _isProcessing;
 
-        static string AppDataDir
+        /// <summary>
+        /// Gets a cached preview texture for the given icon.
+        /// Returns null if not cached — call LoadPreviewBatchAsync to load.
+        /// </summary>
+        public Sprite GetPreview(string prefix, string name)
         {
-            get
-            {
-                var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                return Path.Combine(local, "IconBrowser");
-            }
+            var atlas = GetOrLoadAtlas(prefix);
+            return atlas?.GetSprite(name);
         }
 
-        static string GetAppDataPath(string prefix, string name)
-            => Path.Combine(AppDataDir, $"{prefix}_{name}.svg");
-
-        public VectorImage GetPreview(string prefix, string name)
-        {
-            var key = $"{prefix}_{name}";
-            _memoryCache.TryGetValue(key, out var cached);
-            return cached;
-        }
-
+        /// <summary>
+        /// Queues a batch of icons for preview loading.
+        /// Icons already in the atlas are skipped.
+        /// </summary>
         public async Task LoadPreviewBatchAsync(string prefix, List<string> names, Action onComplete = null)
         {
-            var toLoad = new List<string>();
+            var atlas = GetOrLoadAtlas(prefix) ?? GetOrCreateAtlas(prefix);
+
+            var toFetch = new List<string>();
             foreach (var name in names)
             {
                 var key = $"{prefix}_{name}";
-                if (_memoryCache.ContainsKey(key) || _pendingKeys.Contains(key))
+                if (atlas.HasIcon(name) || _pendingKeys.Contains(key))
                     continue;
                 _pendingKeys.Add(key);
-                toLoad.Add(name);
-                if (toLoad.Count >= MAX_BATCH_SIZE) break;
+                toFetch.Add(name);
             }
 
-            if (toLoad.Count == 0) return;
+            if (toFetch.Count == 0)
+            {
+                onComplete?.Invoke();
+                return;
+            }
 
-            _queue.Enqueue((prefix, toLoad, onComplete));
+            // Split into batches of MAX_BATCH_SIZE, only last batch gets the callback
+            for (int i = 0; i < toFetch.Count; i += MAX_BATCH_SIZE)
+            {
+                int count = Math.Min(MAX_BATCH_SIZE, toFetch.Count - i);
+                var batch = toFetch.GetRange(i, count);
+                bool isLast = i + count >= toFetch.Count;
+                _queue.Enqueue((prefix, batch, isLast ? onComplete : null));
+            }
+
             if (!_isProcessing)
                 await ProcessQueue();
         }
@@ -71,94 +78,76 @@ namespace IconBrowser.Import
             while (_queue.Count > 0)
             {
                 var (prefix, names, onComplete) = _queue.Dequeue();
-                await LoadBatchInternal(prefix, names, onComplete);
+                await FetchAndPackBatch(prefix, names, onComplete);
             }
             _isProcessing = false;
         }
 
-        async Task LoadBatchInternal(string prefix, List<string> names, Action onComplete)
+        async Task FetchAndPackBatch(string prefix, List<string> names, Action onComplete)
         {
             try
             {
-                EnsureAppDataDir();
+                // 1. Fetch SVG bodies from Iconify API
+                var svgBodies = await IconifyClient.GetIconsBatchAsync(prefix, names.ToArray());
+                if (svgBodies.Count == 0) return;
+
+                // 2. Write SVGs to temp Assets folder
                 EnsureTempAssetsDir();
-
-                // Separate into cache hits (AppData) and misses (need API fetch)
-                var cacheMisses = new List<string>();
-                var cacheHits = new List<(string name, string svgContent)>();
-
-                foreach (var name in names)
+                var writtenPaths = new List<(string name, string svgPath)>();
+                foreach (var kv in svgBodies)
                 {
-                    var appDataPath = GetAppDataPath(prefix, name);
-                    if (File.Exists(appDataPath))
-                    {
-                        var svg = File.ReadAllText(appDataPath);
-                        cacheHits.Add((name, svg));
-                    }
-                    else
-                    {
-                        cacheMisses.Add(name);
-                    }
-                }
-
-                // Fetch missing from API
-                if (cacheMisses.Count > 0)
-                {
-                    var svgBodies = await IconifyClient.GetIconsBatchAsync(prefix, cacheMisses.ToArray());
-                    foreach (var kv in svgBodies)
-                    {
-                        // Save to AppData (persistent cache)
-                        var appDataPath = GetAppDataPath(prefix, kv.Key);
-                        File.WriteAllText(appDataPath, kv.Value);
-                        cacheHits.Add((kv.Key, kv.Value));
-                    }
-                }
-
-                if (cacheHits.Count == 0) return;
-
-                // Write all to temp Assets folder for VectorImage conversion
-                var writtenPaths = new List<(string key, string path)>();
-                foreach (var (name, svgContent) in cacheHits)
-                {
-                    var svgPath = $"{TEMP_ASSETS_DIR}/{prefix}_{name}.svg";
+                    var svgPath = $"{TEMP_ASSETS_DIR}/{prefix}_{kv.Key}.svg";
                     var fullPath = Path.GetFullPath(svgPath);
-                    File.WriteAllText(fullPath, svgContent);
+                    File.WriteAllText(fullPath, kv.Value);
 
                     var metaPath = fullPath + ".meta";
                     if (!File.Exists(metaPath))
-                    {
-                        var guid = Guid.NewGuid().ToString("N");
-                        File.WriteAllText(metaPath, GenerateMetaContent(guid));
-                    }
+                        File.WriteAllText(metaPath, GenerateTextureMeta(Guid.NewGuid().ToString("N")));
 
-                    writtenPaths.Add((name, svgPath));
+                    writtenPaths.Add((kv.Key, svgPath));
                 }
 
-                // Batch import
+                // 3. Batch-import SVGs (StartAssetEditing suppresses per-file refresh)
                 AssetDatabase.StartAssetEditing();
                 try
                 {
                     foreach (var (_, path) in writtenPaths)
-                        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+                        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
                 }
                 finally
                 {
                     AssetDatabase.StopAssetEditing();
                 }
 
-                // Load VectorImages into memory cache
-                foreach (var (key, path) in writtenPaths)
+                // 4. Load textures and pack into atlas
+                var atlas = GetOrCreateAtlas(prefix);
+                foreach (var (name, path) in writtenPaths)
                 {
-                    var asset = AssetDatabase.LoadAssetAtPath<VectorImage>(path);
-                    if (asset != null)
-                        _memoryCache[$"{prefix}_{key}"] = asset;
+                    var tex = LoadImportedTexture(path);
+                    if (tex != null)
+                    {
+                        var readable = IconAtlas.MakeReadable(tex, IconAtlas.ICON_SIZE, IconAtlas.ICON_SIZE);
+                        atlas.AddIcon(name, readable);
+                        UnityEngine.Object.DestroyImmediate(readable);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[IconBrowser] Failed to load texture for: {path}");
+                    }
                 }
 
+                // 5. Save atlas to disk (PNG + index)
+                atlas.Save();
+
+                // 6. Clean up temp files immediately
+                CleanupTempBatch(writtenPaths);
+
+                Debug.Log($"[IconBrowser] Packed {writtenPaths.Count} previews into {prefix} atlas ({atlas.Count} total)");
                 onComplete?.Invoke();
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[IconBrowser] Preview batch load failed: {e.Message}");
+                Debug.LogWarning($"[IconBrowser] Preview batch failed: {e.Message}");
             }
             finally
             {
@@ -167,41 +156,114 @@ namespace IconBrowser.Import
             }
         }
 
+        /// <summary>
+        /// Loads the Texture2D from an imported SVG asset.
+        /// Tries Texture2D directly, then Sprite.texture, then sub-assets.
+        /// </summary>
+        static Texture2D LoadImportedTexture(string assetPath)
+        {
+            // Try loading directly as Texture2D
+            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+            if (tex != null) return tex;
+
+            // Try Sprite — TexturedSprite mode produces a Sprite main asset
+            var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+            if (sprite != null && sprite.texture != null)
+                return sprite.texture;
+
+            // Fall back to loading all sub-assets
+            var objects = AssetDatabase.LoadAllAssetsAtPath(assetPath);
+            if (objects.Length == 0)
+            {
+                Debug.LogWarning($"[IconBrowser] No assets at path: {assetPath}");
+                return null;
+            }
+            foreach (var obj in objects)
+            {
+                if (obj is Texture2D t) return t;
+                if (obj is Sprite s && s.texture != null) return s.texture;
+            }
+            Debug.LogWarning($"[IconBrowser] No Texture2D found among {objects.Length} assets at: {assetPath} (types: {string.Join(", ", System.Linq.Enumerable.Select(objects, o => o.GetType().Name))})");
+            return null;
+        }
+
+        void CleanupTempBatch(List<(string name, string svgPath)> paths)
+        {
+            foreach (var (_, svgPath) in paths)
+            {
+                var fullPath = Path.GetFullPath(svgPath);
+                if (File.Exists(fullPath)) File.Delete(fullPath);
+                if (File.Exists(fullPath + ".meta")) File.Delete(fullPath + ".meta");
+            }
+        }
+
+        IconAtlas GetOrLoadAtlas(string prefix)
+        {
+            if (_atlases.TryGetValue(prefix, out var cached)) return cached;
+
+            var loaded = IconAtlas.Load(prefix);
+            if (loaded != null)
+            {
+                _atlases[prefix] = loaded;
+                return loaded;
+            }
+            return null;
+        }
+
+        IconAtlas GetOrCreateAtlas(string prefix)
+        {
+            if (_atlases.TryGetValue(prefix, out var existing)) return existing;
+            var atlas = IconAtlas.Create(prefix);
+            _atlases[prefix] = atlas;
+            return atlas;
+        }
+
+        /// <summary>
+        /// Clears in-memory state for the current library (when switching libraries).
+        /// Does NOT delete persistent atlas files.
+        /// </summary>
         public void ClearMemoryCache()
         {
-            _memoryCache.Clear();
+            // Atlas stays in _atlases dict — it will be reused.
+            // Just clear pending operations.
             _pendingKeys.Clear();
         }
 
         /// <summary>
-        /// Cleans up the temporary Assets folder used for VectorImage conversion.
-        /// AppData cache is preserved for cross-session/cross-project reuse.
+        /// Cleans up temp assets folder. Atlas files in AppData are preserved.
         /// </summary>
         public void CleanupTempAssets()
         {
             if (AssetDatabase.IsValidFolder(TEMP_ASSETS_DIR))
                 AssetDatabase.DeleteAsset(TEMP_ASSETS_DIR);
-
-            _memoryCache.Clear();
-            _pendingKeys.Clear();
         }
 
-        static void EnsureAppDataDir()
+        /// <summary>
+        /// Destroys all atlas textures and sprites (call on window close).
+        /// </summary>
+        public void Destroy()
         {
-            if (!Directory.Exists(AppDataDir))
-                Directory.CreateDirectory(AppDataDir);
+            foreach (var kv in _atlases)
+                kv.Value.Destroy();
+            _atlases.Clear();
+            _pendingKeys.Clear();
+            CleanupTempAssets();
         }
+
+        #region Temp Assets
 
         static void EnsureTempAssetsDir()
         {
             if (AssetDatabase.IsValidFolder(TEMP_ASSETS_DIR)) return;
-
             var parent = Path.GetDirectoryName(TEMP_ASSETS_DIR)!.Replace('\\', '/');
             var folderName = Path.GetFileName(TEMP_ASSETS_DIR);
             AssetDatabase.CreateFolder(parent, folderName);
         }
 
-        static string GenerateMetaContent(string guid)
+        /// <summary>
+        /// Meta file for SVG import as TexturedSprite (small texture for fast import).
+        /// </summary>
+        static string GenerateTextureMeta(string guid)
         {
             return $@"fileFormatVersion: 2
 guid: {guid}
@@ -213,7 +275,7 @@ ScriptedImporter:
   assetBundleName:
   assetBundleVariant:
   script: {{fileID: 12408, guid: 0000000000000000e000000000000000, type: 0}}
-  svgType: 3
+  svgType: 1
   texturedSpriteMeshType: 0
   svgPixelsPerUnit: 100
   gradientResolution: 64
@@ -224,8 +286,8 @@ ScriptedImporter:
   preserveViewport: 0
   advancedMode: 0
   tessellationMode: 0
-  predefinedResolutionIndex: 1
-  targetResolution: 1080
+  predefinedResolutionIndex: 0
+  targetResolution: 64
   resolutionMultiplier: 1
   stepDistance: 10
   samplingStepDistance: 100
@@ -234,9 +296,9 @@ ScriptedImporter:
   maxTangentAngleEnabled: 0
   maxTangentAngle: 5
   keepTextureAspectRatio: 1
-  textureSize: 256
-  textureWidth: 256
-  textureHeight: 256
+  textureSize: 64
+  textureWidth: 64
+  textureHeight: 64
   wrapMode: 0
   filterMode: 1
   sampleCount: 4
@@ -258,5 +320,7 @@ ScriptedImporter:
     PhysicsOutlines: []
 ";
         }
+
+        #endregion
     }
 }

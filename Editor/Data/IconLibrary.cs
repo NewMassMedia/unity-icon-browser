@@ -9,7 +9,9 @@ namespace IconBrowser.Data
         public string Name { get; set; }
         public int Total { get; set; }
         public string Author { get; set; }
+        public string AuthorUrl { get; set; }
         public string License { get; set; }
+        public string LicenseSpdx { get; set; }
         public string Category { get; set; }
         public bool Palette { get; set; }
 

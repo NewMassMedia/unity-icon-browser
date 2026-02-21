@@ -28,17 +28,19 @@ namespace IconBrowser
         SvgPreviewCache _previewCache;
 
         ToolbarSearchField _searchField;
-        PopupField<string> _libraryDropdown;
-        PopupField<string> _categoryDropdown;
         VisualElement _tabBar;
         Button _projectTabBtn;
         Button _browseTabBtn;
+        Button _settingsTabBtn;
         Label _statusLabel;
 
         ProjectTab _projectTab;
         BrowseTab _browseTab;
+        VisualElement _settingsTab;
 
-        int _activeTab; // 0 = Project, 1 = Browse
+        TextField _pathField;
+
+        int _activeTab; // 0 = Project, 1 = Browse, 2 = Settings
         List<IconLibrary> _sortedLibraries = new();
 
         void CreateGUI()
@@ -46,18 +48,13 @@ namespace IconBrowser
             _db = new IconDatabase();
             _previewCache = new SvgPreviewCache();
 
-            // Load stylesheet from package path
-            var packagePath = GetPackagePath();
-            if (!string.IsNullOrEmpty(packagePath))
-            {
-                var uss = AssetDatabase.LoadAssetAtPath<StyleSheet>($"{packagePath}/Editor/IconBrowserWindow.uss");
-                if (uss != null)
-                    rootVisualElement.styleSheets.Add(uss);
-            }
+            // Load stylesheet
+            var uss = FindStyleSheet();
+            if (uss != null)
+                rootVisualElement.styleSheets.Add(uss);
 
             rootVisualElement.AddToClassList("icon-browser");
 
-            BuildToolbar();
             BuildTabs();
             BuildStatusBar();
 
@@ -66,41 +63,9 @@ namespace IconBrowser
             LoadLibrariesAsync();
         }
 
-        void BuildToolbar()
-        {
-            var toolbar = new VisualElement();
-            toolbar.AddToClassList("icon-browser__toolbar");
-            rootVisualElement.Add(toolbar);
-
-            _searchField = new ToolbarSearchField();
-            _searchField.AddToClassList("icon-browser__search");
-            _searchField.RegisterValueChangedCallback(OnSearchChanged);
-            toolbar.Add(_searchField);
-
-            // Library dropdown — starts with "Lucide" placeholder until libraries load
-            _libraryDropdown = new PopupField<string>(
-                new List<string> { "Lucide" }, 0);
-            _libraryDropdown.AddToClassList("icon-browser__library-dropdown");
-            _libraryDropdown.RegisterValueChangedCallback(OnLibraryChanged);
-            toolbar.Add(_libraryDropdown);
-
-            // Category dropdown — hidden until categories are loaded
-            _categoryDropdown = new PopupField<string>(
-                new List<string> { "All" }, 0);
-            _categoryDropdown.AddToClassList("icon-browser__category-dropdown");
-            _categoryDropdown.style.display = DisplayStyle.None;
-            _categoryDropdown.RegisterValueChangedCallback(OnCategoryChanged);
-            toolbar.Add(_categoryDropdown);
-
-            // Settings button
-            var settingsBtn = new Button(ShowSettings) { text = "\u2699" };
-            settingsBtn.AddToClassList("icon-browser__settings-btn");
-            toolbar.Add(settingsBtn);
-        }
-
         void BuildTabs()
         {
-            // Tab bar
+            // Tab bar — tabs on left, search on right
             _tabBar = new VisualElement();
             _tabBar.AddToClassList("icon-browser__tab-bar");
             rootVisualElement.Add(_tabBar);
@@ -113,6 +78,21 @@ namespace IconBrowser
             _browseTabBtn = new Button(() => SwitchTab(1)) { text = "Browse" };
             _browseTabBtn.AddToClassList("icon-browser__tab-btn");
             _tabBar.Add(_browseTabBtn);
+
+            _settingsTabBtn = new Button(() => SwitchTab(2)) { text = "Settings" };
+            _settingsTabBtn.AddToClassList("icon-browser__tab-btn");
+            _tabBar.Add(_settingsTabBtn);
+
+            // Spacer pushes remaining items to the right
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1;
+            _tabBar.Add(spacer);
+
+            // Search field
+            _searchField = new ToolbarSearchField();
+            _searchField.AddToClassList("icon-browser__search");
+            _searchField.RegisterValueChangedCallback(OnSearchChanged);
+            _tabBar.Add(_searchField);
 
             // Tab content
             var tabContent = new VisualElement();
@@ -129,10 +109,118 @@ namespace IconBrowser
                 _projectTab.Initialize();
                 UpdateStatusBar();
             };
-            _browseTab.OnCategoriesLoaded += OnCategoriesLoaded;
             tabContent.Add(_browseTab);
 
+            _settingsTab = BuildSettingsTab();
+            _settingsTab.style.display = DisplayStyle.None;
+            tabContent.Add(_settingsTab);
+
             UpdateProjectTabLabel();
+        }
+
+        VisualElement BuildSettingsTab()
+        {
+            var root = new ScrollView(ScrollViewMode.Vertical);
+            root.AddToClassList("settings-tab");
+
+            // --- Path Settings ---
+            var pathSection = new VisualElement();
+            pathSection.AddToClassList("settings-tab__section");
+            root.Add(pathSection);
+
+            var pathTitle = new Label("Path Settings");
+            pathTitle.AddToClassList("settings-tab__section-title");
+            pathSection.Add(pathTitle);
+
+            var pathRow = new VisualElement();
+            pathRow.AddToClassList("settings-tab__row");
+            pathSection.Add(pathRow);
+
+            var pathLabel = new Label("Import Path");
+            pathLabel.AddToClassList("settings-tab__label");
+            pathRow.Add(pathLabel);
+
+            _pathField = new TextField();
+            _pathField.value = IconBrowserSettings.IconsPath;
+            _pathField.isReadOnly = true;
+            _pathField.AddToClassList("settings-tab__path-field");
+            pathRow.Add(_pathField);
+
+            var changeBtn = new Button(() => ChangeImportPath()) { text = "Change..." };
+            changeBtn.AddToClassList("settings-tab__change-btn");
+            pathRow.Add(changeBtn);
+
+            // --- Import Settings ---
+            var importSection = new VisualElement();
+            importSection.AddToClassList("settings-tab__section");
+            root.Add(importSection);
+
+            var importTitle = new Label("Import Settings");
+            importTitle.AddToClassList("settings-tab__section-title");
+            importSection.Add(importTitle);
+
+            // Filter Mode
+            var filterRow = new VisualElement();
+            filterRow.AddToClassList("settings-tab__row");
+            importSection.Add(filterRow);
+
+            var filterLabel = new Label("Filter Mode");
+            filterLabel.AddToClassList("settings-tab__label");
+            filterRow.Add(filterLabel);
+
+            var filterChoices = new List<string> { "Point", "Bilinear", "Trilinear" };
+            var filterField = new PopupField<string>(filterChoices, IconBrowserSettings.FilterMode);
+            filterField.RegisterValueChangedCallback(evt =>
+            {
+                IconBrowserSettings.FilterMode = filterChoices.IndexOf(evt.newValue);
+            });
+            filterRow.Add(filterField);
+
+            // Sample Count
+            var sampleRow = new VisualElement();
+            sampleRow.AddToClassList("settings-tab__row");
+            importSection.Add(sampleRow);
+
+            var sampleLabel = new Label("Sample Count");
+            sampleLabel.AddToClassList("settings-tab__label");
+            sampleRow.Add(sampleLabel);
+
+            var sampleChoices = new List<string> { "1", "2", "4", "8" };
+            var sampleIndex = sampleChoices.IndexOf(IconBrowserSettings.SampleCount.ToString());
+            if (sampleIndex < 0) sampleIndex = 2; // default to "4"
+            var sampleField = new PopupField<string>(sampleChoices, sampleIndex);
+            sampleField.RegisterValueChangedCallback(evt =>
+            {
+                if (int.TryParse(evt.newValue, out var val))
+                    IconBrowserSettings.SampleCount = val;
+            });
+            sampleRow.Add(sampleField);
+
+            return root;
+        }
+
+        void ChangeImportPath()
+        {
+            var currentPath = IconBrowserSettings.IconsPath;
+            var newPath = EditorUtility.OpenFolderPanel("Select Icons Import Folder", currentPath, "");
+            if (string.IsNullOrEmpty(newPath)) return;
+
+            // Convert absolute path to Assets-relative path
+            var dataPath = Application.dataPath;
+            if (newPath.StartsWith(dataPath))
+            {
+                newPath = "Assets" + newPath.Substring(dataPath.Length);
+                IconBrowserSettings.IconsPath = newPath;
+                _pathField.value = newPath;
+                _projectTab.Initialize();
+                UpdateStatusBar();
+                Debug.Log($"[IconBrowser] Import path set to: {newPath}");
+            }
+            else
+            {
+                EditorUtility.DisplayDialog("Invalid Path",
+                    "The selected folder must be inside the Assets directory.", "OK");
+            }
         }
 
         void BuildStatusBar()
@@ -149,18 +237,24 @@ namespace IconBrowser
 
             _projectTabBtn.EnableInClassList("icon-browser__tab-btn--active", tab == 0);
             _browseTabBtn.EnableInClassList("icon-browser__tab-btn--active", tab == 1);
+            _settingsTabBtn.EnableInClassList("icon-browser__tab-btn--active", tab == 2);
 
             _projectTab.style.display = tab == 0 ? DisplayStyle.Flex : DisplayStyle.None;
             _browseTab.style.display = tab == 1 ? DisplayStyle.Flex : DisplayStyle.None;
+            _settingsTab.style.display = tab == 2 ? DisplayStyle.Flex : DisplayStyle.None;
 
-            _libraryDropdown.style.display = tab == 1 ? DisplayStyle.Flex : DisplayStyle.None;
-            _categoryDropdown.style.display = tab == 1 ? DisplayStyle.Flex : DisplayStyle.None;
+            // Hide search field on Settings tab
+            _searchField.style.display = tab == 2 ? DisplayStyle.None : DisplayStyle.Flex;
 
             // Clear search when switching tabs
             _searchField.value = "";
 
-            if (tab == 1 && _browseTab.CurrentPrefix == "lucide")
-                _browseTab.Initialize();
+            if (tab == 1)
+            {
+                _browseTab.SyncImportState();
+                if (_browseTab.CurrentPrefix == "lucide")
+                    _browseTab.Initialize();
+            }
         }
 
         void OnSearchChanged(ChangeEvent<string> evt)
@@ -171,54 +265,15 @@ namespace IconBrowser
                 _browseTab.Search(evt.newValue);
         }
 
-        void OnLibraryChanged(ChangeEvent<string> evt)
-        {
-            if (_sortedLibraries.Count == 0) return;
-
-            var lib = _sortedLibraries.FirstOrDefault(l => l.DisplayName == evt.newValue);
-            if (lib != null)
-            {
-                // Reset category when switching libraries
-                _categoryDropdown.SetValueWithoutNotify("All");
-                _browseTab.SetLibrary(lib.Prefix);
-                UpdateStatusBar();
-            }
-        }
-
-        void OnCategoryChanged(ChangeEvent<string> evt)
-        {
-            var category = evt.newValue == "All" ? "" : evt.newValue;
-            _browseTab.SetCategory(category);
-        }
-
-        void OnCategoriesLoaded(List<string> categories)
-        {
-            if (categories == null || categories.Count == 0)
-            {
-                _categoryDropdown.style.display = DisplayStyle.None;
-                return;
-            }
-
-            var choices = new List<string> { "All" };
-            choices.AddRange(categories.OrderBy(c => c));
-            _categoryDropdown.choices = choices;
-            _categoryDropdown.SetValueWithoutNotify("All");
-
-            if (_activeTab == 1)
-                _categoryDropdown.style.display = DisplayStyle.Flex;
-        }
-
         async void LoadLibrariesAsync()
         {
             await _db.LoadLibrariesAsync();
             if (!_db.LibrariesLoaded) return;
 
             _sortedLibraries = _db.GetSortedLibraries();
-            var displayNames = _sortedLibraries.Select(l => l.DisplayName).ToList();
 
-            // Replace the dropdown with loaded data
-            _libraryDropdown.choices = displayNames;
-            _libraryDropdown.SetValueWithoutNotify(displayNames[0]); // Lucide is first
+            // Pass libraries to BrowseTab's sidebar list
+            _browseTab.SetLibraries(_sortedLibraries);
 
             UpdateStatusBar();
         }
@@ -244,58 +299,21 @@ namespace IconBrowser
             }
         }
 
-        void ShowSettings()
+        static StyleSheet FindStyleSheet()
         {
-            var currentPath = IconBrowserSettings.IconsPath;
-            var newPath = EditorUtility.OpenFolderPanel("Select Icons Import Folder", currentPath, "");
-            if (string.IsNullOrEmpty(newPath)) return;
-
-            // Convert absolute path to Assets-relative path
-            var dataPath = Application.dataPath;
-            if (newPath.StartsWith(dataPath))
-            {
-                newPath = "Assets" + newPath.Substring(dataPath.Length);
-                IconBrowserSettings.IconsPath = newPath;
-                _projectTab.Initialize();
-                UpdateStatusBar();
-                Debug.Log($"[IconBrowser] Import path set to: {newPath}");
-            }
-            else
-            {
-                EditorUtility.DisplayDialog("Invalid Path",
-                    "The selected folder must be inside the Assets directory.", "OK");
-            }
-        }
-
-        /// <summary>
-        /// Finds the package path for this package, supporting both local and embedded installations.
-        /// </summary>
-        static string GetPackagePath()
-        {
-            // Try package path first
             var guids = AssetDatabase.FindAssets("IconBrowserWindow t:StyleSheet");
             foreach (var guid in guids)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
-                if (path.Contains("IconBrowserWindow.uss"))
-                {
-                    // Return the directory containing the USS
-                    return System.IO.Path.GetDirectoryName(path)?.Replace('\\', '/');
-                }
+                if (path.EndsWith("IconBrowserWindow.uss"))
+                    return AssetDatabase.LoadAssetAtPath<StyleSheet>(path);
             }
-
-            // Fallback: search by package name
-            var packageInfo = UnityEditor.PackageManager.PackageInfo.FindForAssembly(
-                typeof(IconBrowserWindow).Assembly);
-            if (packageInfo != null)
-                return packageInfo.assetPath;
-
             return null;
         }
 
         void OnDestroy()
         {
-            _previewCache?.CleanupTempAssets();
+            _previewCache?.Destroy();
         }
     }
 }

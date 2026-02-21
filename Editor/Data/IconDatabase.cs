@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEditor;
@@ -17,7 +18,7 @@ namespace IconBrowser.Data
         readonly Dictionary<string, IconLibrary> _libraries = new();
         readonly Dictionary<string, List<string>> _collectionCache = new();
         readonly Dictionary<string, Dictionary<string, List<string>>> _categoryCache = new();
-        readonly HashSet<string> _importedNames = new();
+        readonly Dictionary<string, string> _importedNames = new(); // name → prefix
 
         public IReadOnlyList<IconEntry> LocalIcons => _localIcons;
         public IReadOnlyDictionary<string, IconLibrary> Libraries => _libraries;
@@ -28,36 +29,86 @@ namespace IconBrowser.Data
         public event Action OnLocalIconsChanged;
 
         /// <summary>
-        /// Scans the local icons folder for imported SVG VectorImages.
+        /// Migrates flat-structure icons ({IconsPath}/{name}.svg) into prefix subfolders ({IconsPath}/{prefix}/{name}.svg).
+        /// Uses the manifest to determine each icon's prefix. Runs once automatically; safe to remove after all users migrate.
+        /// </summary>
+        void MigrateFlatToPrefix()
+        {
+            var iconsPath = IconBrowserSettings.IconsPath;
+            var fullIconsDir = Path.GetFullPath(iconsPath);
+            if (!Directory.Exists(fullIconsDir)) return;
+
+            var manifest = IconManifest.GetAll();
+            if (manifest.Count == 0) return;
+
+            bool moved = false;
+            foreach (var kv in manifest)
+            {
+                var name = kv.Key;
+                var prefix = kv.Value;
+                var oldAssetPath = $"{iconsPath}/{name}.svg";
+                var oldFullPath = Path.GetFullPath(oldAssetPath);
+
+                if (!File.Exists(oldFullPath)) continue;
+
+                var newDir = $"{iconsPath}/{prefix}";
+                if (!AssetDatabase.IsValidFolder(newDir))
+                    AssetDatabase.CreateFolder(iconsPath, prefix);
+
+                var newAssetPath = $"{newDir}/{name}.svg";
+                var err = AssetDatabase.MoveAsset(oldAssetPath, newAssetPath);
+                if (string.IsNullOrEmpty(err))
+                {
+                    moved = true;
+                }
+                else
+                {
+                    Debug.LogWarning($"[IconBrowser] Migration failed for '{name}': {err}");
+                }
+            }
+
+            if (moved)
+            {
+                AssetDatabase.Refresh();
+                Debug.Log("[IconBrowser] Migrated flat icons to prefix subfolders.");
+            }
+        }
+
+        /// <summary>
+        /// Scans the entire project for SVG VectorImage assets.
         /// </summary>
         public void ScanLocalIcons()
         {
             _localIcons.Clear();
             _importedNames.Clear();
+            IconManifest.Invalidate();
 
-            var iconsPath = IconBrowserSettings.IconsPath;
-            if (!AssetDatabase.IsValidFolder(iconsPath)) return;
+            MigrateFlatToPrefix();
 
-            var guids = AssetDatabase.FindAssets("t:VectorImage", new[] { iconsPath });
+            var manifest = IconManifest.GetAll();
+            var guids = AssetDatabase.FindAssets("t:VectorImage");
             foreach (var guid in guids)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (!path.EndsWith(".svg")) continue;
+                if (path.StartsWith("Assets/_IconBrowserTemp")) continue;
 
                 var asset = AssetDatabase.LoadAssetAtPath<VectorImage>(path);
                 if (asset == null) continue;
 
                 var name = System.IO.Path.GetFileNameWithoutExtension(path);
+                var prefix = manifest.TryGetValue(name, out var p) ? p : "unknown";
+
                 _localIcons.Add(new IconEntry
                 {
                     Name = name,
-                    Prefix = "lucide",
+                    Prefix = prefix,
                     IsImported = true,
                     LocalAsset = asset,
                     Tags = Array.Empty<string>(),
                     Categories = Array.Empty<string>()
                 });
-                _importedNames.Add(name);
+                _importedNames[name] = prefix;
             }
 
             _localIcons.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
@@ -65,15 +116,56 @@ namespace IconBrowser.Data
         }
 
         /// <summary>
-        /// Returns filtered local icons by search query.
+        /// Returns filtered local icons by search query and optional library prefix.
         /// </summary>
-        public List<IconEntry> SearchLocal(string query)
+        public List<IconEntry> SearchLocal(string query, string prefixFilter = "")
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return new List<IconEntry>(_localIcons);
+            IEnumerable<IconEntry> result = _localIcons;
 
-            var q = query.ToLowerInvariant();
-            return _localIcons.Where(e => e.Name.Contains(q)).ToList();
+            if (!string.IsNullOrEmpty(prefixFilter))
+                result = result.Where(e => e.Prefix == prefixFilter);
+
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                var q = query.ToLowerInvariant();
+                result = result.Where(e => e.Name.Contains(q));
+            }
+
+            return result.ToList();
+        }
+
+        /// <summary>
+        /// Returns distinct library prefixes from locally imported icons (including "unknown").
+        /// </summary>
+        public List<string> GetLocalPrefixes()
+        {
+            return _localIcons
+                .Select(e => e.Prefix)
+                .Distinct()
+                .OrderBy(p => p)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Reassigns all "unknown" prefix icons to the given prefix and rescans.
+        /// </summary>
+        public int ReassignUnknownIcons(string newPrefix)
+        {
+            // Collect unknown icon names
+            var unknownNames = _localIcons
+                .Where(e => e.Prefix == "unknown")
+                .Select(e => e.Name)
+                .ToList();
+
+            if (unknownNames.Count == 0) return 0;
+
+            // Add missing entries to manifest + fix "unknown" entries
+            int added = IconManifest.AddMissing(unknownNames, newPrefix);
+            int fixed2 = IconManifest.ReassignUnknowns(newPrefix);
+            int total = added + fixed2;
+
+            if (total > 0) ScanLocalIcons();
+            return total;
         }
 
         /// <summary>
@@ -191,7 +283,7 @@ namespace IconBrowser.Data
                     {
                         Name = n,
                         Prefix = p,
-                        IsImported = _importedNames.Contains(n),
+                        IsImported = _importedNames.TryGetValue(n, out var ip) && ip == p,
                         Tags = Array.Empty<string>(),
                         Categories = Array.Empty<string>()
                     };
@@ -231,7 +323,7 @@ namespace IconBrowser.Data
                 {
                     Name = n,
                     Prefix = prefix,
-                    IsImported = _importedNames.Contains(n),
+                    IsImported = _importedNames.TryGetValue(n, out var ip) && ip == prefix,
                     Tags = Array.Empty<string>(),
                     Categories = entryCategories
                 };
@@ -241,14 +333,14 @@ namespace IconBrowser.Data
         /// <summary>
         /// Checks if an icon name is already imported locally.
         /// </summary>
-        public bool IsImported(string name) => _importedNames.Contains(name);
+        public bool IsImported(string name) => _importedNames.ContainsKey(name);
 
         /// <summary>
         /// Marks an icon as imported and refreshes local cache.
         /// </summary>
-        public void MarkImported(string name)
+        public void MarkImported(string name, string prefix)
         {
-            _importedNames.Add(name);
+            _importedNames[name] = prefix;
             ScanLocalIcons();
         }
 

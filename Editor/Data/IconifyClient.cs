@@ -67,6 +67,7 @@ namespace IconBrowser.Data
         static async Task<string> FetchAsync(string url)
         {
             var request = UnityWebRequest.Get(url);
+            request.timeout = 15;
             var op = request.SendWebRequest();
             var tcs = new TaskCompletionSource<bool>();
             op.completed += _ => tcs.SetResult(true);
@@ -99,12 +100,16 @@ namespace IconBrowser.Data
                     var authorObj = ParseJsonObject(author);
                     if (authorObj.TryGetValue("name", out var authorName))
                         lib.Author = UnquoteJson(authorName);
+                    if (authorObj.TryGetValue("url", out var authorUrl))
+                        lib.AuthorUrl = UnquoteJson(authorUrl);
                 }
                 if (inner.TryGetValue("license", out var license))
                 {
                     var licObj = ParseJsonObject(license);
                     if (licObj.TryGetValue("title", out var licTitle))
                         lib.License = UnquoteJson(licTitle);
+                    if (licObj.TryGetValue("spdx", out var licSpdx))
+                        lib.LicenseSpdx = UnquoteJson(licSpdx);
                 }
                 if (inner.TryGetValue("category", out var category))
                     lib.Category = UnquoteJson(category);
@@ -195,8 +200,7 @@ namespace IconBrowser.Data
                 if (iconObj.TryGetValue("height", out var ihs) && int.TryParse(ihs, out var ihv)) ih = ihv;
 
                 var svg = $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{iw}\" height=\"{ih}\" " +
-                          $"viewBox=\"0 0 {iw} {ih}\" fill=\"none\" stroke=\"#FFFFFF\" " +
-                          $"stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">" +
+                          $"viewBox=\"0 0 {iw} {ih}\">" +
                           $"{bodyStr}</svg>";
                 result[kv.Key] = svg;
             }

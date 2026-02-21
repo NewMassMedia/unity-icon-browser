@@ -5,50 +5,73 @@
     background-color: rgb(30, 30, 30);
 }
 
-/* --- Toolbar --- */
+/* --- Tab Bar (includes tabs, search, settings) --- */
 
-.icon-browser__toolbar {
+.icon-browser__tab-bar {
     flex-direction: row;
     align-items: center;
-    padding: 6px 8px;
+    padding: 0 8px;
     border-bottom-width: 1px;
     border-bottom-color: rgb(50, 50, 50);
     background-color: rgb(37, 37, 37);
 }
 
 .icon-browser__search {
-    flex-grow: 1;
-    margin-right: 8px;
-    max-width: none;
-}
-
-.icon-browser__library-dropdown {
-    min-width: 180px;
-    display: none; /* hidden on Project tab */
+    width: 180px;
+    min-width: 100px;
+    max-width: 240px;
+    margin: 0 4px;
 }
 
 .icon-browser__category-dropdown {
-    min-width: 120px;
-    margin-left: 4px;
-    display: none; /* hidden on Project tab */
+    min-width: 100px;
+    max-width: 140px;
+    margin: 0 4px;
+    font-size: 11px;
 }
 
-.icon-browser__settings-btn {
-    margin-left: 4px;
-    padding: 4px 8px;
-    font-size: 14px;
-    min-width: 28px;
-    -unity-text-align: middle-center;
+/* --- Settings Tab --- */
+
+.settings-tab {
+    padding: 24px;
+    max-width: 500px;
 }
 
-/* --- Tab Bar --- */
+.settings-tab__section {
+    margin-bottom: 24px;
+}
 
-.icon-browser__tab-bar {
-    flex-direction: row;
-    padding: 0 8px;
+.settings-tab__section-title {
+    font-size: 13px;
+    color: rgb(210, 210, 210);
+    -unity-font-style: bold;
+    margin-bottom: 12px;
     border-bottom-width: 1px;
     border-bottom-color: rgb(50, 50, 50);
-    background-color: rgb(37, 37, 37);
+    padding-bottom: 6px;
+}
+
+.settings-tab__row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.settings-tab__label {
+    width: 120px;
+    font-size: 11px;
+    color: rgb(170, 170, 170);
+    flex-shrink: 0;
+}
+
+.settings-tab__path-field {
+    flex-grow: 1;
+    font-size: 11px;
+}
+
+.settings-tab__change-btn {
+    margin-left: 4px;
+    flex-shrink: 0;
 }
 
 .icon-browser__tab-btn {
@@ -104,6 +127,87 @@
     flex-grow: 1;
 }
 
+/* ===== Library List (Browse tab sidebar) ===== */
+
+.library-list {
+    width: 180px;
+    min-width: 140px;
+    border-right-width: 1px;
+    border-right-color: rgb(50, 50, 50);
+    background-color: rgb(33, 33, 33);
+    flex-shrink: 0;
+}
+
+.library-list__section {
+}
+
+.library-list__item {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 12px;
+    margin: 0;
+    border-width: 0;
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+    cursor: link;
+}
+
+.library-list__item:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.library-list__item--active {
+    background-color: rgba(120, 120, 255, 0.15);
+    border-left-width: 2px;
+    border-left-color: rgb(120, 120, 255);
+}
+
+.library-list__item--active:hover {
+    background-color: rgba(120, 120, 255, 0.2);
+}
+
+.library-list__item-name {
+    flex-grow: 1;
+    font-size: 12px;
+    color: rgb(190, 190, 190);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    -unity-text-align: middle-left;
+}
+
+.library-list__item--active .library-list__item-name {
+    color: rgb(240, 240, 240);
+}
+
+.library-list__item-count {
+    font-size: 10px;
+    color: rgb(100, 100, 100);
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+
+.library-list__more-toggle {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 12px;
+    margin: 0;
+    border-width: 0;
+    border-top-width: 1px;
+    border-top-color: rgb(50, 50, 50);
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgb(100, 100, 100);
+    font-size: 11px;
+    -unity-text-align: middle-left;
+    cursor: link;
+}
+
+.library-list__more-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+    color: rgb(160, 160, 160);
+}
+
 /* ===== Icon Grid ===== */
 
 .icon-grid {
@@ -141,6 +245,47 @@
     border-color: rgba(120, 120, 255, 0.5);
 }
 
+/* --- Inline Action Button (Import / Delete) --- */
+
+.icon-grid__cell-action-btn {
+    position: absolute;
+    bottom: 2px;
+    left: 6px;
+    right: 6px;
+    height: 18px;
+    font-size: 9px;
+    -unity-text-align: middle-center;
+    padding: 0;
+    margin: 0;
+    border-radius: 4px;
+    border-width: 0;
+}
+
+.icon-grid__cell-action-btn--import {
+    background-color: rgb(60, 100, 200);
+    color: rgb(240, 240, 240);
+}
+
+.icon-grid__cell-action-btn--import:hover {
+    background-color: rgb(70, 115, 225);
+}
+
+.icon-grid__cell-action-btn--delete {
+    background-color: rgba(200, 60, 60, 0.25);
+    color: rgb(220, 100, 100);
+}
+
+.icon-grid__cell-action-btn--delete:hover {
+    background-color: rgba(200, 60, 60, 0.4);
+}
+
+.icon-grid__selection-rect {
+    background-color: rgba(120, 120, 255, 0.1);
+    border-width: 1px;
+    border-color: rgba(120, 120, 255, 0.5);
+    border-radius: 2px;
+}
+
 .icon-grid__cell-icon {
     width: 24px;
     height: 24px;
@@ -176,6 +321,23 @@
     -unity-text-align: middle-center;
     flex-grow: 1;
     padding: 40px;
+}
+
+/* --- Alphabet Header --- */
+
+.icon-grid__header {
+    /* position: absolute set by C# */
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 0 8px 2px 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(55, 55, 55);
+}
+
+.icon-grid__header > Label {
+    font-size: 12px;
+    color: rgb(100, 100, 100);
+    -unity-font-style: bold;
 }
 
 /* ===== Detail Panel ===== */
@@ -224,6 +386,47 @@
     white-space: normal;
 }
 
+/* --- Detail Meta --- */
+
+.icon-detail__meta {
+    font-size: 10px;
+    color: rgb(120, 120, 120);
+    -unity-text-align: upper-center;
+    margin-bottom: 4px;
+}
+
+.icon-detail__full-id {
+    color: rgb(140, 160, 200);
+    margin-bottom: 8px;
+}
+
+/* --- Project Tab Filter Bar --- */
+
+.project-tab__filter-bar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 4px 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(50, 50, 50);
+    background-color: rgb(35, 35, 35);
+}
+
+.project-tab__fix-btn {
+    margin-left: 8px;
+    padding: 4px 8px;
+    font-size: 10px;
+    border-radius: 4px;
+    background-color: rgba(200, 160, 60, 0.2);
+    color: rgb(220, 180, 80);
+    border-color: rgb(200, 160, 60);
+    border-width: 1px;
+}
+
+.project-tab__fix-btn:hover {
+    background-color: rgba(200, 160, 60, 0.35);
+}
+
 .icon-detail__code {
     font-size: 10px;
     color: rgb(160, 200, 160);
@@ -265,4 +468,162 @@
 
 .icon-detail__btn--delete:hover {
     background-color: rgba(200, 60, 60, 0.35);
+}
+
+/* ===== Browse Tab Center Column ===== */
+
+.browse-tab__center {
+    flex-grow: 1;
+    flex-direction: column;
+    min-width: 200px;
+}
+
+/* --- Library Info Bar --- */
+
+.browse-tab__info-bar {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(50, 50, 50);
+    background-color: rgb(38, 38, 38);
+}
+
+.browse-tab__info-name {
+    font-size: 12px;
+    color: rgb(210, 210, 210);
+    -unity-font-style: bold;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.browse-tab__info-author {
+    font-size: 10px;
+    color: rgb(120, 120, 120);
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    padding: 0;
+    margin: 0 6px 0 0;
+    flex-shrink: 0;
+}
+
+.browse-tab__info-author--link {
+    color: rgb(100, 140, 220);
+    cursor: link;
+}
+
+.browse-tab__info-author--link:hover {
+    color: rgb(140, 180, 255);
+}
+
+.browse-tab__info-meta {
+    font-size: 10px;
+    color: rgb(120, 120, 120);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Variant Filter Tabs --- */
+
+.browse-tab__variant-bar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 4px 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(50, 50, 50);
+    background-color: rgb(35, 35, 35);
+}
+
+.browse-tab__variant-tab {
+    padding: 3px 10px;
+    margin: 2px;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: rgb(60, 60, 60);
+    background-color: rgba(0, 0, 0, 0);
+    color: rgb(140, 140, 140);
+    font-size: 10px;
+    -unity-font-style: normal;
+}
+
+.browse-tab__variant-tab:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    color: rgb(200, 200, 200);
+}
+
+.browse-tab__variant-tab--active {
+    background-color: rgba(120, 120, 255, 0.2);
+    border-color: rgba(120, 120, 255, 0.5);
+    color: rgb(220, 220, 240);
+}
+
+/* ===== Grid Variant Badge ===== */
+
+.icon-grid__cell-badge {
+    position: absolute;
+    top: 14px;
+    right: 10px;
+    min-width: 16px;
+    height: 14px;
+    border-radius: 7px;
+    background-color: rgb(90, 90, 200);
+    color: rgb(240, 240, 240);
+    font-size: 9px;
+    -unity-text-align: middle-center;
+    padding: 0 3px;
+}
+
+/* ===== Variant Selector ===== */
+
+.icon-detail__variants {
+    align-self: stretch;
+    margin: 4px 0 8px;
+}
+
+.icon-detail__variant-header {
+    font-size: 10px;
+    color: rgb(140, 140, 140);
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.icon-detail__variant-strip {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.icon-detail__variant-btn {
+    flex-direction: column;
+    align-items: center;
+    padding: 4px;
+    margin: 2px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0);
+    background-color: rgba(255, 255, 255, 0.04);
+    min-width: 40px;
+}
+
+.icon-detail__variant-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.icon-detail__variant-btn--active {
+    background-color: rgba(120, 120, 255, 0.15);
+    border-color: rgba(120, 120, 255, 0.5);
+}
+
+.icon-detail__variant-icon {
+    width: 20px;
+    height: 20px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.icon-detail__variant-label {
+    font-size: 8px;
+    color: rgb(140, 140, 140);
+    -unity-text-align: upper-center;
+    margin-top: 2px;
 }

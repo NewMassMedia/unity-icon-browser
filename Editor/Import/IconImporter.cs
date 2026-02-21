@@ -72,37 +72,36 @@ ScriptedImporter:
         /// </summary>
         public static async Task<bool> ImportIconAsync(string prefix, string name)
         {
+            var svg = await IconifyClient.GetSvgAsync(prefix, name);
+            var converted = ConvertForUnity(svg);
+
+            var iconsDir = $"{IconBrowserSettings.IconsPath}/{prefix}";
+            var fullDir = Path.GetFullPath(iconsDir);
+            if (!Directory.Exists(fullDir))
+                Directory.CreateDirectory(fullDir);
+
+            var assetPath = $"{iconsDir}/{name}.svg";
+            var fullPath = Path.GetFullPath(assetPath);
+            var metaPath = fullPath + ".meta";
+
             try
             {
-                var svg = await IconifyClient.GetSvgAsync(prefix, name);
-                var converted = ConvertForUnity(svg);
-
-                var iconsDir = IconBrowserSettings.IconsPath;
-                var fullDir = Path.GetFullPath(iconsDir);
-                if (!Directory.Exists(fullDir))
-                    Directory.CreateDirectory(fullDir);
-
-                var assetPath = $"{iconsDir}/{name}.svg";
-                var fullPath = Path.GetFullPath(assetPath);
-
-                File.WriteAllText(fullPath, converted);
-
-                // Write .meta with correct import settings
-                var metaPath = fullPath + ".meta";
                 var guid = System.Guid.NewGuid().ToString("N");
+                File.WriteAllText(fullPath, converted);
                 File.WriteAllText(metaPath, string.Format(META_TEMPLATE, guid));
 
                 AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
-
-                // Verify and fix import settings via SerializedObject
                 ApplyImportSettings(assetPath);
 
+                IconManifest.Set(name, prefix);
                 Debug.Log($"[IconBrowser] Imported: {name} from {prefix}");
                 return true;
             }
-            catch (System.Exception e)
+            catch (System.Exception ex)
             {
-                Debug.LogError($"[IconBrowser] Failed to import '{name}': {e.Message}");
+                Debug.LogError($"[IconBrowser] Import failed for {prefix}:{name}: {ex.Message}");
+                if (File.Exists(fullPath)) File.Delete(fullPath);
+                if (File.Exists(metaPath)) File.Delete(metaPath);
                 return false;
             }
         }
@@ -134,8 +133,8 @@ ScriptedImporter:
             var so = new SerializedObject(importer);
             SetPropertyInt(so, "svgType", 3);           // VectorImage
             SetPropertyInt(so, "viewportOptions", 1);    // SVG Document
-            SetPropertyInt(so, "filterMode", 1);         // Bilinear
-            SetPropertyInt(so, "sampleCount", 4);        // 4x MSAA
+            SetPropertyInt(so, "filterMode", IconBrowserSettings.FilterMode);
+            SetPropertyInt(so, "sampleCount", IconBrowserSettings.SampleCount);
 
             if (so.hasModifiedProperties)
             {
@@ -154,9 +153,9 @@ ScriptedImporter:
         /// <summary>
         /// Deletes a locally imported icon.
         /// </summary>
-        public static bool DeleteIcon(string name)
+        public static bool DeleteIcon(string name, string prefix)
         {
-            var iconsDir = IconBrowserSettings.IconsPath;
+            var iconsDir = $"{IconBrowserSettings.IconsPath}/{prefix}";
             var assetPath = $"{iconsDir}/{name}.svg";
             if (!File.Exists(Path.GetFullPath(assetPath)))
                 return false;
