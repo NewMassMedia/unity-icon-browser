@@ -1,0 +1,268 @@
+/* ===== Icon Browser Window ===== */
+
+.icon-browser {
+    flex-grow: 1;
+    background-color: rgb(30, 30, 30);
+}
+
+/* --- Toolbar --- */
+
+.icon-browser__toolbar {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(50, 50, 50);
+    background-color: rgb(37, 37, 37);
+}
+
+.icon-browser__search {
+    flex-grow: 1;
+    margin-right: 8px;
+    max-width: none;
+}
+
+.icon-browser__library-dropdown {
+    min-width: 180px;
+    display: none; /* hidden on Project tab */
+}
+
+.icon-browser__category-dropdown {
+    min-width: 120px;
+    margin-left: 4px;
+    display: none; /* hidden on Project tab */
+}
+
+.icon-browser__settings-btn {
+    margin-left: 4px;
+    padding: 4px 8px;
+    font-size: 14px;
+    min-width: 28px;
+    -unity-text-align: middle-center;
+}
+
+/* --- Tab Bar --- */
+
+.icon-browser__tab-bar {
+    flex-direction: row;
+    padding: 0 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(50, 50, 50);
+    background-color: rgb(37, 37, 37);
+}
+
+.icon-browser__tab-btn {
+    padding: 6px 16px;
+    margin: 0;
+    border-width: 0;
+    border-bottom-width: 2px;
+    border-bottom-color: rgba(0, 0, 0, 0);
+    border-radius: 0;
+    background-color: rgba(0, 0, 0, 0);
+    color: rgb(140, 140, 140);
+    -unity-font-style: normal;
+    font-size: 12px;
+}
+
+.icon-browser__tab-btn:hover {
+    color: rgb(200, 200, 200);
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.icon-browser__tab-btn--active {
+    color: rgb(240, 240, 240);
+    border-bottom-color: rgb(120, 120, 255);
+}
+
+/* --- Tab Content --- */
+
+.icon-browser__tab-content {
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+/* --- Status Bar --- */
+
+.icon-browser__status {
+    padding: 4px 12px;
+    border-top-width: 1px;
+    border-top-color: rgb(50, 50, 50);
+    background-color: rgb(37, 37, 37);
+    color: rgb(120, 120, 120);
+    font-size: 11px;
+    -unity-text-align: middle-left;
+}
+
+/* ===== Tab Layout ===== */
+
+.icon-tab {
+    flex-grow: 1;
+}
+
+.icon-tab__body {
+    flex-direction: row;
+    flex-grow: 1;
+}
+
+/* ===== Icon Grid ===== */
+
+.icon-grid {
+    flex-grow: 1;
+    min-width: 200px;
+}
+
+.icon-grid__scroll {
+    flex-grow: 1;
+}
+
+.icon-grid__viewport {
+    /* sized dynamically by C# */
+}
+
+.icon-grid__cell {
+    /* position: absolute set by C# */
+    padding: 8px 4px 4px 4px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0);
+    background-color: rgba(0, 0, 0, 0);
+    cursor: link;
+}
+
+.icon-grid__cell:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.icon-grid__cell--selected {
+    background-color: rgba(120, 120, 255, 0.15);
+    border-color: rgba(120, 120, 255, 0.5);
+}
+
+.icon-grid__cell-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: rgb(220, 220, 220);
+}
+
+.icon-grid__cell-check {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: rgb(80, 200, 80);
+}
+
+.icon-grid__cell-label {
+    margin-top: 4px;
+    font-size: 9px;
+    color: rgb(160, 160, 160);
+    -unity-text-align: upper-center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 68px;
+}
+
+.icon-grid__empty {
+    color: rgb(120, 120, 120);
+    font-size: 12px;
+    -unity-text-align: middle-center;
+    flex-grow: 1;
+    padding: 40px;
+}
+
+/* ===== Detail Panel ===== */
+
+.icon-detail {
+    width: 200px;
+    min-width: 160px;
+    border-left-width: 1px;
+    border-left-color: rgb(50, 50, 50);
+    background-color: rgb(33, 33, 33);
+    padding: 16px;
+}
+
+.icon-detail__placeholder {
+    color: rgb(100, 100, 100);
+    font-size: 11px;
+    -unity-text-align: middle-center;
+    flex-grow: 1;
+}
+
+.icon-detail__content {
+    align-items: center;
+}
+
+.icon-detail__preview {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 12px;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: rgb(230, 230, 230);
+}
+
+.icon-detail__name {
+    font-size: 13px;
+    color: rgb(230, 230, 230);
+    -unity-font-style: bold;
+    -unity-text-align: upper-center;
+    margin-bottom: 8px;
+}
+
+.icon-detail__tags {
+    font-size: 10px;
+    color: rgb(140, 140, 140);
+    -unity-text-align: upper-center;
+    margin-bottom: 8px;
+    white-space: normal;
+}
+
+.icon-detail__code {
+    font-size: 10px;
+    color: rgb(160, 200, 160);
+    background-color: rgb(25, 25, 25);
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 12px;
+    -unity-text-align: upper-left;
+    align-self: stretch;
+}
+
+.icon-detail__buttons {
+    align-self: stretch;
+}
+
+.icon-detail__btn {
+    margin-bottom: 4px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.icon-detail__btn--import {
+    background-color: rgb(60, 100, 200);
+    color: rgb(240, 240, 240);
+    border-width: 0;
+}
+
+.icon-detail__btn--import:hover {
+    background-color: rgb(70, 115, 225);
+}
+
+.icon-detail__btn--delete {
+    background-color: rgba(200, 60, 60, 0.2);
+    color: rgb(220, 100, 100);
+    border-color: rgb(200, 60, 60);
+    border-width: 1px;
+}
+
+.icon-detail__btn--delete:hover {
+    background-color: rgba(200, 60, 60, 0.35);
+}
