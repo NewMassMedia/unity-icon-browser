@@ -15,7 +15,7 @@ namespace IconBrowser
     /// </summary>
     public class IconBrowserWindow : EditorWindow
     {
-        [MenuItem("Tools/Icon Browser")]
+        [MenuItem("Window/Icon Browser")]
         public static void Open()
         {
             var window = GetWindow<IconBrowserWindow>();

@@ -50,7 +50,7 @@ Search, preview, and import **200,000+ open-source icons** from [Iconify](https:
 
 ### Open the browser
 
-**Tools > Icon Browser**
+**Window > Icon Browser**
 
 ### Browse tab
 
