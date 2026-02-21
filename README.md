@@ -5,6 +5,12 @@ Search, preview, and import **200,000+ open-source icons** from [Iconify](https:
 ![Unity 6+](https://img.shields.io/badge/Unity-6000.0%2B-black?logo=unity)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
+![Demo](.github/demo.gif)
+
+| Project Tab | Browse Tab |
+|:-----------:|:----------:|
+| ![Project](.github/screenshot-project.png) | ![Browse](.github/screenshot-browse.png) |
+
 ## Features
 
 - **Browse** 150+ icon libraries (Lucide, Material Symbols, Heroicons, Phosphor, Tabler, Bootstrap Icons, etc.)
@@ -30,7 +36,7 @@ Search, preview, and import **200,000+ open-source icons** from [Iconify](https:
 2. Click **+** > **Add package from git URL...**
 3. Enter:
    ```
-   https://github.com/maemi/IconBrowser.git
+   https://github.com/NewMassMedia/unity-icon-browser.git
    ```
 
 ### Option 2: Local
