@@ -18,6 +18,7 @@ namespace IconBrowser.UI
         readonly IconDetailPanel _detail;
         readonly VisualElement _libraryBar;
         readonly Button _fixUnknownBtn;
+        readonly Button _refreshBtn;
 
         string _searchQuery = "";
         string _prefixFilter = "";
@@ -35,6 +36,10 @@ namespace IconBrowser.UI
             _fixUnknownBtn = new Button(OnFixUnknown) { text = "Fix Unknown \u2192 lucide" };
             _fixUnknownBtn.AddToClassList("project-tab__fix-btn");
             _fixUnknownBtn.style.display = DisplayStyle.None;
+
+            _refreshBtn = new Button(OnRefresh) { text = "\u21BB" };
+            _refreshBtn.AddToClassList("project-tab__refresh-btn");
+            _refreshBtn.tooltip = "Rescan local icons";
 
             var body = new VisualElement();
             body.AddToClassList("icon-tab__body");
@@ -117,6 +122,7 @@ namespace IconBrowser.UI
             _fixUnknownBtn.style.display = prefixes.Contains("unknown")
                 ? DisplayStyle.Flex : DisplayStyle.None;
             _libraryBar.Add(_fixUnknownBtn);
+            _libraryBar.Add(_refreshBtn);
         }
 
         void OnFixUnknown()
@@ -128,6 +134,13 @@ namespace IconBrowser.UI
                 RefreshLibraryFilter();
                 Refresh();
             }
+        }
+
+        void OnRefresh()
+        {
+            _db.ScanLocalIcons();
+            RefreshLibraryFilter();
+            Refresh();
         }
 
         void Refresh()

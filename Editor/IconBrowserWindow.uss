@@ -427,6 +427,22 @@
     background-color: rgba(200, 160, 60, 0.35);
 }
 
+.project-tab__refresh-btn {
+    margin-left: auto;
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 4px;
+    background-color: rgba(100, 100, 100, 0.2);
+    color: rgb(180, 180, 180);
+    border-color: rgb(100, 100, 100);
+    border-width: 1px;
+}
+
+.project-tab__refresh-btn:hover {
+    background-color: rgba(100, 100, 100, 0.4);
+    color: rgb(220, 220, 220);
+}
+
 .icon-detail__code {
     font-size: 10px;
     color: rgb(160, 200, 160);
