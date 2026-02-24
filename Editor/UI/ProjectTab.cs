@@ -179,7 +179,11 @@ namespace IconBrowser.UI
                         (float)(i + 1) / toDelete.Count);
                     if (cancelled) break;
 
-                    if (IconImporter.DeleteIcon(toDelete[i].Name, toDelete[i].Prefix))
+                    bool deleted = !string.IsNullOrEmpty(toDelete[i].LocalAssetPath)
+                        ? IconImporter.DeleteIconByPath(toDelete[i].LocalAssetPath)
+                        : IconImporter.DeleteIcon(toDelete[i].Name, toDelete[i].Prefix);
+
+                    if (deleted)
                         _db.MarkDeleted(toDelete[i].Name);
                 }
             }
@@ -194,7 +198,11 @@ namespace IconBrowser.UI
 
         void OnDelete(IconEntry entry)
         {
-            if (IconImporter.DeleteIcon(entry.Name, entry.Prefix))
+            bool deleted = !string.IsNullOrEmpty(entry.LocalAssetPath)
+                ? IconImporter.DeleteIconByPath(entry.LocalAssetPath)
+                : IconImporter.DeleteIcon(entry.Name, entry.Prefix);
+
+            if (deleted)
             {
                 _db.MarkDeleted(entry.Name);
                 _detail.Clear();

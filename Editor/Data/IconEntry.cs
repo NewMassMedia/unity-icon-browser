@@ -16,6 +16,7 @@ namespace IconBrowser.Data
         public string[] Categories { get; set; }
         public bool IsImported { get; set; }
         public VectorImage LocalAsset { get; set; }
+        public string LocalAssetPath { get; set; }
 
         /// <summary>
         /// Number of variant icons in this group (for grid badge display).

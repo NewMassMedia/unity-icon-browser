@@ -56,6 +56,7 @@ namespace IconBrowser.Data
                     Prefix = prefix,
                     IsImported = true,
                     LocalAsset = asset,
+                    LocalAssetPath = path,
                     Tags = Array.Empty<string>(),
                     Categories = Array.Empty<string>()
                 });

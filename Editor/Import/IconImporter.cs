@@ -162,5 +162,14 @@ ScriptedImporter:
 
             return AssetDatabase.DeleteAsset(assetPath);
         }
+
+        /// <summary>Deletes an icon by its actual asset path (for icons whose prefix may not match the folder).</summary>
+        public static bool DeleteIconByPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath) || !File.Exists(Path.GetFullPath(assetPath)))
+                return false;
+
+            return AssetDatabase.DeleteAsset(assetPath);
+        }
     }
 }
