@@ -169,8 +169,10 @@ namespace IconBrowser.UI
             _grid.OnQuickImportClicked += OnImport;
             _grid.OnQuickDeleteClicked += OnQuickDelete;
             _detail.OnImportClicked += OnImport;
+            _detail.OnDeleteClicked += OnQuickDelete;
             _detail.OnVariantSelected += OnVariantSelected;
             _detail.OnBatchImportClicked += OnBatchImport;
+            _detail.OnBatchDeleteClicked += OnBatchDelete;
         }
 
         /// <summary>
@@ -723,6 +725,24 @@ namespace IconBrowser.UI
             }
         }
 
+        void OnBatchDelete(List<IconEntry> entries)
+        {
+            var toDelete = entries.Where(e => e.IsImported).ToList();
+            if (toDelete.Count == 0) return;
+
+            foreach (var entry in toDelete)
+            {
+                if (IconImporter.DeleteIcon(entry.Name, entry.Prefix))
+                {
+                    entry.IsImported = false;
+                    _db.MarkDeleted(entry.Name);
+                }
+            }
+
+            _grid.RefreshPreviews();
+            OnIconImported?.Invoke();
+        }
+
         async void OnVariantSelected(IconEntry variant)
         {
             // Look up variants for this entry
@@ -851,8 +871,10 @@ namespace IconBrowser.UI
             _grid.OnQuickImportClicked -= OnImport;
             _grid.OnQuickDeleteClicked -= OnQuickDelete;
             _detail.OnImportClicked -= OnImport;
+            _detail.OnDeleteClicked -= OnQuickDelete;
             _detail.OnVariantSelected -= OnVariantSelected;
             _detail.OnBatchImportClicked -= OnBatchImport;
+            _detail.OnBatchDeleteClicked -= OnBatchDelete;
         }
     }
 }
