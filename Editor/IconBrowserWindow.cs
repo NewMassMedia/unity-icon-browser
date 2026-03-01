@@ -38,6 +38,7 @@ namespace IconBrowser
         ProjectTab _projectTab;
         BrowseTab _browseTab;
         VisualElement _settingsTab;
+        ToastNotification _toast;
 
         TextField _pathField;
 
@@ -56,8 +57,12 @@ namespace IconBrowser
 
             rootVisualElement.AddToClassList("icon-browser");
 
+            _toast = new ToastNotification();
+
             BuildTabs();
             BuildStatusBar();
+
+            rootVisualElement.Add(_toast);
 
             // Initialize
             _projectTab.Initialize();
@@ -101,10 +106,12 @@ namespace IconBrowser
             rootVisualElement.Add(tabContent);
 
             _projectTab = new ProjectTab(_db);
+            _projectTab.SetToast(_toast);
             tabContent.Add(_projectTab);
 
             _browseTab = new BrowseTab(_db, _previewCache);
             _browseTab.style.display = DisplayStyle.None;
+            _browseTab.SetToast(_toast);
             _browseTab.OnIconImported += () =>
             {
                 _projectTab.Initialize();
@@ -315,7 +322,16 @@ namespace IconBrowser
 
         async Task LoadLibrariesInternalAsync()
         {
-            await _db.LoadLibrariesAsync();
+            try
+            {
+                await _db.LoadLibrariesAsync();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[IconBrowser] Failed to load libraries: {e}");
+                _toast?.ShowError("Failed to load icon libraries. Check your network.");
+                return;
+            }
             if (!_db.LibrariesLoaded) return;
 
             _sortedLibraries = _db.GetSortedLibraries();

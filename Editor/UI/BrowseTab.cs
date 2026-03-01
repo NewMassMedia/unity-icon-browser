@@ -13,6 +13,7 @@ namespace IconBrowser.UI
     /// <summary>
     /// Browse tab — search and import icons from Iconify API.
     /// Left library list, center icon grid, right detail panel.
+    /// Delegates data operations (loading, filtering, grouping) to BrowseDataController.
     /// </summary>
     public class BrowseTab : VisualElement
     {
@@ -35,8 +36,10 @@ namespace IconBrowser.UI
 
         readonly IconDatabase _db;
         readonly SvgPreviewCache _previewCache;
+        readonly BrowseDataController _dc;
         readonly IconGrid _grid;
         readonly IconDetailPanel _detail;
+        ToastNotification _toast;
 
         // Library list
         readonly ScrollView _libraryScroll;
@@ -56,18 +59,9 @@ namespace IconBrowser.UI
 
         // Variant filter tabs
         readonly VisualElement _variantBar;
-        string _selectedVariant = ""; // "" = All
 
-        string _currentPrefix = "lucide";
         string _searchQuery = "";
-        string _selectedCategory = "";
-        List<IconEntry> _allEntries = new();
-        List<IconEntry> _filteredEntries = new();
-        List<IconEntry> _groupedEntries = new();
-        Dictionary<string, List<IconEntry>> _variantMap = new();
-        bool _isLoading;
         bool _initialized;
-        string _pendingSearchQuery;
 
         IVisualElementScheduledItem _debounceHandle;
         IVisualElementScheduledItem _scrollDebounceHandle;
@@ -79,15 +73,19 @@ namespace IconBrowser.UI
         /// <summary>
         /// Current library prefix.
         /// </summary>
-        public string CurrentPrefix => _currentPrefix;
+        public string CurrentPrefix => _dc.CurrentPrefix;
+
+        /// <summary>
+        /// Sets the toast notification element for user-facing feedback.
+        /// </summary>
+        internal void SetToast(ToastNotification toast) => _toast = toast;
 
         /// <summary>
         /// Syncs IsImported state of all cached entries with the database.
         /// </summary>
         public void SyncImportState()
         {
-            foreach (var entry in _allEntries)
-                entry.IsImported = _db.IsImported(entry.Name);
+            _dc.SyncImportState();
             _grid.RefreshPreviews();
         }
 
@@ -95,7 +93,14 @@ namespace IconBrowser.UI
         {
             _db = db;
             _previewCache = previewCache;
+            _dc = new BrowseDataController(db);
             AddToClassList("icon-tab");
+
+            // Wire data controller events
+            _dc.OnEntriesChanged += OnDataEntriesChanged;
+            _dc.OnCategoriesLoaded += cats => OnCategoriesLoaded?.Invoke(cats);
+            _dc.OnLoadingChanged += ShowLoading;
+            _dc.OnPendingSearchDrained += query => AsyncHelper.FireAndForget(_dc.SearchAsync(query));
 
             var body = new VisualElement();
             body.AddToClassList("icon-tab__body");
@@ -176,6 +181,24 @@ namespace IconBrowser.UI
         }
 
         /// <summary>
+        /// Called when BrowseDataController updates entries after filtering/loading.
+        /// Handles UI concerns: preview cache assignment and grid update.
+        /// </summary>
+        void OnDataEntriesChanged()
+        {
+            foreach (var entry in _dc.FilteredEntries)
+            {
+                if (entry.PreviewSprite != null) continue;
+                if (entry.IsImported && entry.LocalAsset != null) continue;
+                var sprite = _previewCache.GetPreview(entry.Prefix, entry.Name);
+                if (sprite != null) entry.PreviewSprite = sprite;
+            }
+
+            _needsImmediateLoad = true;
+            _grid.SetItems(_dc.GroupedEntries);
+        }
+
+        /// <summary>
         /// Populates the library list from loaded library data.
         /// </summary>
         public void SetLibraries(List<IconLibrary> libraries)
@@ -207,7 +230,7 @@ namespace IconBrowser.UI
             _moreToggle.style.display = rest.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
 
             // Highlight initial selection
-            HighlightLibrary(_currentPrefix);
+            HighlightLibrary(_dc.CurrentPrefix);
         }
 
         VisualElement CreateLibraryItem(IconLibrary lib)
@@ -229,21 +252,17 @@ namespace IconBrowser.UI
 
         void OnLibraryClicked(string prefix)
         {
-            if (prefix == _currentPrefix && _initialized) return;
+            if (prefix == _dc.CurrentPrefix && _initialized) return;
 
             HighlightLibrary(prefix);
-
-            _selectedCategory = "";
-            _selectedVariant = "";
             _detail.Clear();
             _previewCache.ClearMemoryCache();
-            _currentPrefix = prefix;
             _searchQuery = "";
             _initialized = true;
 
             UpdateLibraryInfo(prefix);
             RebuildVariantBar(prefix);
-            AsyncHelper.FireAndForget(LoadCollectionAsync(prefix));
+            AsyncHelper.FireAndForget(_dc.SetPrefixAndLoadAsync(prefix));
         }
 
         void HighlightLibrary(string prefix)
@@ -357,8 +376,6 @@ namespace IconBrowser.UI
 
         void OnVariantTabClicked(string variant)
         {
-            _selectedVariant = variant;
-
             // Update tab active state
             foreach (var child in _variantBar.Children())
             {
@@ -376,7 +393,7 @@ namespace IconBrowser.UI
                 }
             }
 
-            ApplyFilters();
+            _dc.SetVariant(variant);
         }
 
         /// <summary>
@@ -386,9 +403,9 @@ namespace IconBrowser.UI
         {
             if (_initialized) return;
             _initialized = true;
-            UpdateLibraryInfo(_currentPrefix);
-            RebuildVariantBar(_currentPrefix);
-            AsyncHelper.FireAndForget(LoadCollectionAsync(_currentPrefix));
+            UpdateLibraryInfo(_dc.CurrentPrefix);
+            RebuildVariantBar(_dc.CurrentPrefix);
+            AsyncHelper.FireAndForget(_dc.SetPrefixAndLoadAsync(_dc.CurrentPrefix));
         }
 
         /// <summary>
@@ -396,16 +413,13 @@ namespace IconBrowser.UI
         /// </summary>
         public void SetLibrary(string prefix)
         {
-            _currentPrefix = prefix;
             _searchQuery = "";
-            _selectedCategory = "";
-            _selectedVariant = "";
             _detail.Clear();
             _previewCache.ClearMemoryCache();
             HighlightLibrary(prefix);
             UpdateLibraryInfo(prefix);
             RebuildVariantBar(prefix);
-            AsyncHelper.FireAndForget(LoadCollectionAsync(prefix));
+            AsyncHelper.FireAndForget(_dc.SetPrefixAndLoadAsync(prefix));
         }
 
         /// <summary>
@@ -413,8 +427,7 @@ namespace IconBrowser.UI
         /// </summary>
         public void SetCategory(string category)
         {
-            _selectedCategory = category;
-            ApplyCategoryFilter();
+            _dc.SetCategory(category);
         }
 
         /// <summary>
@@ -430,166 +443,11 @@ namespace IconBrowser.UI
             if (string.IsNullOrWhiteSpace(query))
             {
                 // Empty query — show full collection
-                AsyncHelper.FireAndForget(LoadCollectionAsync(_currentPrefix));
+                AsyncHelper.FireAndForget(_dc.LoadCollectionAsync(_dc.CurrentPrefix));
                 return;
             }
 
-            // 300ms debounce
-            _debounceHandle = schedule.Execute(() => AsyncHelper.FireAndForget(SearchRemoteAsync(query))).StartingIn(300);
-        }
-
-        async Task LoadCollectionAsync(string prefix)
-        {
-            if (_isLoading) return;
-            _isLoading = true;
-            _pendingSearchQuery = null;
-
-            ShowLoading(true);
-            try
-            {
-                var names = await _db.GetCollectionIconsAsync(prefix);
-                _allEntries = _db.CreateEntries(prefix, names);
-
-                // Notify about available categories
-                var categories = _db.GetCategories(prefix);
-                OnCategoriesLoaded?.Invoke(categories);
-
-                ApplyCategoryFilter();
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"[IconBrowser] LoadCollectionAsync error: {e}");
-            }
-            finally
-            {
-                _isLoading = false;
-                ShowLoading(false);
-                DrainPendingSearch();
-            }
-        }
-
-        void ApplyCategoryFilter()
-        {
-            ApplyFilters();
-        }
-
-        void ApplyFilters()
-        {
-            // 1. Category filter
-            if (string.IsNullOrEmpty(_selectedCategory))
-            {
-                _filteredEntries = new List<IconEntry>(_allEntries);
-            }
-            else
-            {
-                var iconsInCategory = _db.GetIconsInCategory(_currentPrefix, _selectedCategory);
-                _filteredEntries = _allEntries
-                    .Where(e => iconsInCategory.Contains(e.Name))
-                    .ToList();
-            }
-
-            // 2. Variant filter
-            if (!string.IsNullOrEmpty(_selectedVariant))
-            {
-                if (_selectedVariant == "default")
-                {
-                    // Show only base icons (no variant suffix)
-                    _filteredEntries = _filteredEntries
-                        .Where(e => VariantGrouper.ParseVariant(e.Name, _currentPrefix).variantLabel == "")
-                        .ToList();
-                }
-                else
-                {
-                    // Show only icons whose parsed variant label matches exactly
-                    _filteredEntries = _filteredEntries
-                        .Where(e => VariantGrouper.ParseVariant(e.Name, _currentPrefix).variantLabel == _selectedVariant)
-                        .ToList();
-                }
-            }
-
-            // Eagerly assign cached previews so cells render immediately
-            foreach (var entry in _filteredEntries)
-            {
-                if (entry.PreviewSprite != null) continue;
-                if (entry.IsImported && entry.LocalAsset != null) continue;
-                var sprite = _previewCache.GetPreview(entry.Prefix, entry.Name);
-                if (sprite != null) entry.PreviewSprite = sprite;
-            }
-
-            // Group variants (only when showing "All")
-            if (string.IsNullOrEmpty(_selectedVariant))
-            {
-                ApplyVariantGrouping();
-            }
-            else
-            {
-                // Single variant selected — no grouping needed
-                _groupedEntries = _filteredEntries;
-                _variantMap = new Dictionary<string, List<IconEntry>>();
-                foreach (var entry in _groupedEntries)
-                {
-                    entry.VariantCount = 1;
-                    var (_, suffix) = VariantGrouper.ParseVariant(entry.Name, _currentPrefix);
-                    entry.VariantLabel = suffix;
-                }
-            }
-
-            _needsImmediateLoad = true;
-            _grid.SetItems(_groupedEntries);
-        }
-
-        void ApplyVariantGrouping()
-        {
-            var (reps, map) = VariantGrouper.GroupEntries(_filteredEntries, _currentPrefix);
-            _variantMap = map;
-            _groupedEntries = reps;
-
-            // Set VariantCount on representatives and VariantLabel on all entries
-            foreach (var kv in _variantMap)
-            {
-                foreach (var entry in kv.Value)
-                {
-                    var (_, suffix) = VariantGrouper.ParseVariant(entry.Name, _currentPrefix);
-                    entry.VariantLabel = suffix;
-                }
-            }
-            foreach (var rep in _groupedEntries)
-            {
-                var (baseName, _) = VariantGrouper.ParseVariant(rep.Name, _currentPrefix);
-                rep.VariantCount = _variantMap.TryGetValue(baseName, out var group) ? group.Count : 1;
-            }
-        }
-
-        async Task SearchRemoteAsync(string query)
-        {
-            if (_isLoading)
-            {
-                _pendingSearchQuery = query;
-                return;
-            }
-            _isLoading = true;
-            _pendingSearchQuery = null;
-
-            ShowLoading(true);
-            try
-            {
-                _allEntries = await _db.SearchRemoteAsync(query, _currentPrefix);
-                ApplyFilters();
-            }
-            finally
-            {
-                _isLoading = false;
-                ShowLoading(false);
-                DrainPendingSearch();
-            }
-        }
-
-        void DrainPendingSearch()
-        {
-            if (_pendingSearchQuery == null) return;
-            var query = _pendingSearchQuery;
-            _pendingSearchQuery = null;
-            AsyncHelper.FireAndForget(SearchRemoteAsync(query));
+            _debounceHandle = schedule.Execute(() => AsyncHelper.FireAndForget(_dc.SearchAsync(query))).StartingIn(IconBrowserConstants.SEARCH_DEBOUNCE_MS);
         }
 
         void OnSelected(IconEntry entry)
@@ -599,8 +457,8 @@ namespace IconBrowser.UI
             if (preview != null)
                 entry.PreviewSprite = preview;
 
-            var (baseName, _) = VariantGrouper.ParseVariant(entry.Name, _currentPrefix);
-            _variantMap.TryGetValue(baseName, out var variants);
+            var (baseName, _) = VariantGrouper.ParseVariant(entry.Name, _dc.CurrentPrefix);
+            _dc.VariantMap.TryGetValue(baseName, out var variants);
 
             // Preload all variant previews so the variant strip shows icons
             if (variants != null && variants.Count > 1)
@@ -679,7 +537,7 @@ namespace IconBrowser.UI
             }
             if (toLoad.Count == 0) return;
 
-            await _previewCache.LoadPreviewBatchAsync(_currentPrefix, toLoad, () =>
+            await _previewCache.LoadPreviewBatchAsync(_dc.CurrentPrefix, toLoad, () =>
             {
                 foreach (var v in variants)
                 {
@@ -711,11 +569,16 @@ namespace IconBrowser.UI
                     entry.IsImported = true;
                     _db.MarkImported(entry.Name, entry.Prefix);
 
-                    var (baseName, _) = VariantGrouper.ParseVariant(entry.Name, _currentPrefix);
-                    _variantMap.TryGetValue(baseName, out var variants);
+                    var (baseName, _) = VariantGrouper.ParseVariant(entry.Name, _dc.CurrentPrefix);
+                    _dc.VariantMap.TryGetValue(baseName, out var variants);
                     _detail.ShowEntry(entry, variants, browseMode: true);
                     _grid.RefreshPreviews();
                     OnIconImported?.Invoke();
+                    _toast?.ShowInfo($"Imported {entry.Name}");
+                }
+                else
+                {
+                    _toast?.ShowError($"Failed to import {entry.Name}");
                 }
             }
             finally
@@ -732,6 +595,7 @@ namespace IconBrowser.UI
                 _db.MarkDeleted(entry.Name);
                 _grid.RefreshPreviews();
                 OnIconImported?.Invoke();
+                _toast?.ShowError($"Deleted {entry.Name}");
             }
         }
 
@@ -740,17 +604,21 @@ namespace IconBrowser.UI
             var toDelete = entries.Where(e => e.IsImported).ToList();
             if (toDelete.Count == 0) return;
 
+            int deletedCount = 0;
             foreach (var entry in toDelete)
             {
                 if (IconImporter.Default.DeleteIcon(entry.Name, entry.Prefix))
                 {
                     entry.IsImported = false;
                     _db.MarkDeleted(entry.Name);
+                    deletedCount++;
                 }
             }
 
             _grid.RefreshPreviews();
             OnIconImported?.Invoke();
+            if (deletedCount > 0)
+                _toast?.ShowError($"Deleted {deletedCount} icon(s)");
         }
 
         void OnVariantSelected(IconEntry variant)
@@ -760,8 +628,8 @@ namespace IconBrowser.UI
 
         async Task OnVariantSelectedAsync(IconEntry variant)
         {
-            var (baseName, _) = VariantGrouper.ParseVariant(variant.Name, _currentPrefix);
-            _variantMap.TryGetValue(baseName, out var variants);
+            var (baseName, _) = VariantGrouper.ParseVariant(variant.Name, _dc.CurrentPrefix);
+            _dc.VariantMap.TryGetValue(baseName, out var variants);
 
             if (variant.PreviewSprite == null && variant.LocalAsset == null)
             {
@@ -772,7 +640,7 @@ namespace IconBrowser.UI
                 }
                 else
                 {
-                    await _previewCache.LoadPreviewBatchAsync(_currentPrefix, new List<string> { variant.Name }, () =>
+                    await _previewCache.LoadPreviewBatchAsync(_dc.CurrentPrefix, new List<string> { variant.Name }, () =>
                     {
                         var preview = _previewCache.GetPreview(variant.Prefix, variant.Name);
                         if (preview != null) variant.PreviewSprite = preview;
@@ -786,7 +654,7 @@ namespace IconBrowser.UI
         }
 
         /// <summary>
-        /// Debounced scroll handler — waits 100ms after last scroll before loading previews.
+        /// Debounced scroll handler — waits before loading previews.
         /// </summary>
         void OnVisibleRangeChangedDebounced(int first, int last)
         {
@@ -798,25 +666,26 @@ namespace IconBrowser.UI
             }
             else
             {
-                _scrollDebounceHandle = schedule.Execute(() => OnVisibleRangeChanged(first, last)).StartingIn(100);
+                _scrollDebounceHandle = schedule.Execute(() => OnVisibleRangeChanged(first, last)).StartingIn(IconBrowserConstants.SCROLL_DEBOUNCE_MS);
             }
         }
 
         void OnVisibleRangeChanged(int first, int last)
         {
-            if (_groupedEntries.Count == 0) return;
+            var groupedEntries = _dc.GroupedEntries;
+            if (groupedEntries.Count == 0) return;
 
             // Prefetch margin: load 2 extra rows above and below the visible range
             int margin = _grid.Columns * 2;
-            first = Mathf.Clamp(first - margin, 0, _groupedEntries.Count - 1);
-            last = Mathf.Clamp(last + margin, 0, _groupedEntries.Count - 1);
+            first = Mathf.Clamp(first - margin, 0, groupedEntries.Count - 1);
+            last = Mathf.Clamp(last + margin, 0, groupedEntries.Count - 1);
 
             // Collect names that need previews — include variant siblings
             var nameSet = new HashSet<string>();
             var allVariantEntries = new List<IconEntry>();
             for (int i = first; i <= last; i++)
             {
-                var entry = _groupedEntries[i];
+                var entry = groupedEntries[i];
                 // Bug fix: only skip imported icons that already have a local asset loaded
                 if (entry.IsImported && entry.LocalAsset != null) continue;
                 var cached = _previewCache.GetPreview(entry.Prefix, entry.Name);
@@ -830,8 +699,8 @@ namespace IconBrowser.UI
                 }
 
                 // Also include all variant siblings for this group
-                var (baseName, _) = VariantGrouper.ParseVariant(entry.Name, _currentPrefix);
-                if (_variantMap.TryGetValue(baseName, out var variants))
+                var (baseName, _) = VariantGrouper.ParseVariant(entry.Name, _dc.CurrentPrefix);
+                if (_dc.VariantMap.TryGetValue(baseName, out var variants))
                 {
                     foreach (var v in variants)
                     {
@@ -851,13 +720,13 @@ namespace IconBrowser.UI
 
             var names = new List<string>(nameSet);
 
-            // Load previews asynchronously (SvgPreviewCache caps at 100 per batch)
-            AsyncHelper.FireAndForget(_previewCache.LoadPreviewBatchAsync(_currentPrefix, names, () =>
+            // Load previews asynchronously
+            AsyncHelper.FireAndForget(_previewCache.LoadPreviewBatchAsync(_dc.CurrentPrefix, names, () =>
             {
                 // Update representative entries
-                for (int i = first; i <= last && i < _groupedEntries.Count; i++)
+                for (int i = first; i <= last && i < groupedEntries.Count; i++)
                 {
-                    var entry = _groupedEntries[i];
+                    var entry = groupedEntries[i];
                     var preview = _previewCache.GetPreview(entry.Prefix, entry.Name);
                     if (preview != null) entry.PreviewSprite = preview;
                 }
@@ -882,6 +751,8 @@ namespace IconBrowser.UI
             _debounceHandle = null;
             _scrollDebounceHandle?.Pause();
             _scrollDebounceHandle = null;
+
+            _dc.OnEntriesChanged -= OnDataEntriesChanged;
 
             _grid.OnIconSelected -= OnSelected;
             _grid.OnVisibleRangeChanged -= OnVisibleRangeChangedDebounced;

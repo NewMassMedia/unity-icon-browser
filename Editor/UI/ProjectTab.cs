@@ -19,6 +19,7 @@ namespace IconBrowser.UI
         readonly VisualElement _libraryBar;
         readonly Button _fixUnknownBtn;
         readonly Button _refreshBtn;
+        ToastNotification _toast;
 
         string _searchQuery = "";
         string _prefixFilter = "";
@@ -60,6 +61,8 @@ namespace IconBrowser.UI
 
             _db.OnLocalIconsChanged += Refresh;
         }
+
+        internal void SetToast(ToastNotification toast) => _toast = toast;
 
         /// <summary>
         /// Initializes the tab — scans local icons and builds the grid.
@@ -207,6 +210,7 @@ namespace IconBrowser.UI
 
             _grid.ClearSelection();
             RefreshLibraryFilter();
+            _toast?.ShowError($"Deleted {toDelete.Count} icon(s)");
         }
 
         void OnDelete(IconEntry entry)
@@ -221,6 +225,7 @@ namespace IconBrowser.UI
                 _detail.Clear();
                 RefreshLibraryFilter();
                 Refresh();
+                _toast?.ShowError($"Deleted {entry.Name}");
             }
         }
 

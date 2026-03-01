@@ -15,7 +15,7 @@ namespace IconBrowser.Data
     public class IconifyClient : IIconifyClient
     {
         const string BASE_URL = "https://api.iconify.design";
-        const int MAX_RETRIES = 2;
+        const int MAX_RETRIES = IconBrowserConstants.MAX_RETRIES;
 
         /// <summary>
         /// Shared default instance for backward compatibility.
@@ -90,7 +90,7 @@ namespace IconBrowser.Data
                 ct.ThrowIfCancellationRequested();
 
                 var request = UnityWebRequest.Get(url);
-                request.timeout = 15;
+                request.timeout = IconBrowserConstants.REQUEST_TIMEOUT_SECONDS;
                 var op = request.SendWebRequest();
                 var tcs = new TaskCompletionSource<bool>();
                 op.completed += _ => tcs.SetResult(true);

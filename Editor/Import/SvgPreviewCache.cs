@@ -18,8 +18,8 @@ namespace IconBrowser.Import
     public class SvgPreviewCache
     {
         const string TEMP_ASSETS_DIR = "Assets/_IconBrowserTemp";
-        const int MAX_BATCH_SIZE = 100;
-        const int MAX_ATLAS_COUNT = 16; // ~64MB limit for LRU eviction
+        const int MAX_BATCH_SIZE = IconBrowserConstants.MAX_BATCH_SIZE;
+        const int MAX_ATLAS_COUNT = IconBrowserConstants.MAX_ATLAS_COUNT;
 
         readonly Dictionary<string, IconAtlas> _atlases = new();
         readonly Dictionary<string, long> _atlasAccessTime = new(); // prefix → tick

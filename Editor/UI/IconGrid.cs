@@ -13,10 +13,10 @@ namespace IconBrowser.UI
     /// </summary>
     public class IconGrid : VisualElement
     {
-        const int CELL_WIDTH = 76;
-        const int CELL_HEIGHT = 84;
-        const int HEADER_HEIGHT = 28;
-        const float DRAG_THRESHOLD = 4f;
+        const int CELL_WIDTH = IconBrowserConstants.CELL_WIDTH;
+        const int CELL_HEIGHT = IconBrowserConstants.CELL_HEIGHT;
+        const int HEADER_HEIGHT = IconBrowserConstants.HEADER_HEIGHT;
+        const float DRAG_THRESHOLD = IconBrowserConstants.DRAG_THRESHOLD;
 
         readonly ScrollView _scrollView;
         readonly VisualElement _viewport;
@@ -929,7 +929,9 @@ namespace IconBrowser.UI
 
         internal static string TruncateName(string name)
         {
-            return name.Length > 9 ? name.Substring(0, 8) + ".." : name;
+            return name.Length > IconBrowserConstants.TRUNCATE_LENGTH
+                ? name.Substring(0, IconBrowserConstants.TRUNCATE_LENGTH - 1) + ".."
+                : name;
         }
     }
 }

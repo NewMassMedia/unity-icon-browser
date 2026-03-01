@@ -12,8 +12,8 @@ namespace IconBrowser.Import
     /// </summary>
     public class IconAtlas
     {
-        public const int ICON_SIZE = 48;
-        const int ATLAS_SIZE = 2048;
+        public const int ICON_SIZE = IconBrowserConstants.ICON_SIZE;
+        const int ATLAS_SIZE = IconBrowserConstants.ATLAS_SIZE;
         const int ICONS_PER_ROW = ATLAS_SIZE / ICON_SIZE; // 42
         const int MAX_ICONS = ICONS_PER_ROW * ICONS_PER_ROW; // 1764
 
