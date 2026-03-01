@@ -193,8 +193,8 @@ namespace IconBrowser.UI
                     if (cancelled) break;
 
                     bool deleted = !string.IsNullOrEmpty(toDelete[i].LocalAssetPath)
-                        ? IconImporter.DeleteIconByPath(toDelete[i].LocalAssetPath)
-                        : IconImporter.DeleteIcon(toDelete[i].Name, toDelete[i].Prefix);
+                        ? IconImporter.Default.DeleteIconByPath(toDelete[i].LocalAssetPath)
+                        : IconImporter.Default.DeleteIcon(toDelete[i].Name, toDelete[i].Prefix);
 
                     if (deleted)
                         _db.MarkDeleted(toDelete[i].Name);
@@ -212,8 +212,8 @@ namespace IconBrowser.UI
         void OnDelete(IconEntry entry)
         {
             bool deleted = !string.IsNullOrEmpty(entry.LocalAssetPath)
-                ? IconImporter.DeleteIconByPath(entry.LocalAssetPath)
-                : IconImporter.DeleteIcon(entry.Name, entry.Prefix);
+                ? IconImporter.Default.DeleteIconByPath(entry.LocalAssetPath)
+                : IconImporter.Default.DeleteIcon(entry.Name, entry.Prefix);
 
             if (deleted)
             {

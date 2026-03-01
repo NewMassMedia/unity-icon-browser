@@ -243,7 +243,7 @@ namespace IconBrowser.UI
 
             UpdateLibraryInfo(prefix);
             RebuildVariantBar(prefix);
-            _ = LoadCollectionAsync(prefix);
+            AsyncHelper.FireAndForget(LoadCollectionAsync(prefix));
         }
 
         void HighlightLibrary(string prefix)
@@ -382,19 +382,19 @@ namespace IconBrowser.UI
         /// <summary>
         /// Initializes the Browse tab — loads the default collection.
         /// </summary>
-        public async void Initialize()
+        public void Initialize()
         {
             if (_initialized) return;
             _initialized = true;
             UpdateLibraryInfo(_currentPrefix);
             RebuildVariantBar(_currentPrefix);
-            await LoadCollectionAsync(_currentPrefix);
+            AsyncHelper.FireAndForget(LoadCollectionAsync(_currentPrefix));
         }
 
         /// <summary>
         /// Changes the active icon library (called externally).
         /// </summary>
-        public async void SetLibrary(string prefix)
+        public void SetLibrary(string prefix)
         {
             _currentPrefix = prefix;
             _searchQuery = "";
@@ -405,7 +405,7 @@ namespace IconBrowser.UI
             HighlightLibrary(prefix);
             UpdateLibraryInfo(prefix);
             RebuildVariantBar(prefix);
-            await LoadCollectionAsync(prefix);
+            AsyncHelper.FireAndForget(LoadCollectionAsync(prefix));
         }
 
         /// <summary>
@@ -430,12 +430,12 @@ namespace IconBrowser.UI
             if (string.IsNullOrWhiteSpace(query))
             {
                 // Empty query — show full collection
-                _ = LoadCollectionAsync(_currentPrefix);
+                AsyncHelper.FireAndForget(LoadCollectionAsync(_currentPrefix));
                 return;
             }
 
             // 300ms debounce
-            _debounceHandle = schedule.Execute(() => _ = SearchRemoteAsync(query)).StartingIn(300);
+            _debounceHandle = schedule.Execute(() => AsyncHelper.FireAndForget(SearchRemoteAsync(query))).StartingIn(300);
         }
 
         async Task LoadCollectionAsync(string prefix)
@@ -589,7 +589,7 @@ namespace IconBrowser.UI
             if (_pendingSearchQuery == null) return;
             var query = _pendingSearchQuery;
             _pendingSearchQuery = null;
-            _ = SearchRemoteAsync(query);
+            AsyncHelper.FireAndForget(SearchRemoteAsync(query));
         }
 
         void OnSelected(IconEntry entry)
@@ -604,7 +604,7 @@ namespace IconBrowser.UI
 
             // Preload all variant previews so the variant strip shows icons
             if (variants != null && variants.Count > 1)
-                _ = PreloadVariantPreviewsAsync(variants);
+                AsyncHelper.FireAndForget(PreloadVariantPreviewsAsync(variants));
 
             _detail.ShowEntry(entry, variants, browseMode: true);
         }
@@ -625,7 +625,12 @@ namespace IconBrowser.UI
             }
         }
 
-        async void OnBatchImport(List<IconEntry> entries)
+        void OnBatchImport(List<IconEntry> entries)
+        {
+            AsyncHelper.FireAndForget(OnBatchImportAsync(entries));
+        }
+
+        async Task OnBatchImportAsync(List<IconEntry> entries)
         {
             var toImport = entries.Where(e => !e.IsImported).ToList();
             if (toImport.Count == 0) return;
@@ -641,7 +646,7 @@ namespace IconBrowser.UI
                         (float)(i + 1) / toImport.Count);
                     if (cancelled) break;
 
-                    var success = await IconImporter.ImportIconAsync(entry.Prefix, entry.Name);
+                    var success = await IconImporter.Default.ImportIconAsync(entry.Prefix, entry.Name);
                     if (success)
                     {
                         entry.IsImported = true;
@@ -682,7 +687,7 @@ namespace IconBrowser.UI
                     if (p != null) v.PreviewSprite = p;
                 }
                 // Re-show detail with loaded previews
-                if (_detail != null)
+                if (_detail != null && variants.Count > 0)
                 {
                     var current = variants.FirstOrDefault(v => v.PreviewSprite != null) ?? variants[0];
                     _detail.ShowEntry(_detail.CurrentEntry, variants, browseMode: true);
@@ -690,12 +695,17 @@ namespace IconBrowser.UI
             });
         }
 
-        async void OnImport(IconEntry entry)
+        void OnImport(IconEntry entry)
+        {
+            AsyncHelper.FireAndForget(OnImportAsync(entry));
+        }
+
+        async Task OnImportAsync(IconEntry entry)
         {
             EditorUtility.DisplayProgressBar("Importing Icon", $"Importing {entry.Name}...", 0.5f);
             try
             {
-                var success = await IconImporter.ImportIconAsync(entry.Prefix, entry.Name);
+                var success = await IconImporter.Default.ImportIconAsync(entry.Prefix, entry.Name);
                 if (success)
                 {
                     entry.IsImported = true;
@@ -716,7 +726,7 @@ namespace IconBrowser.UI
 
         void OnQuickDelete(IconEntry entry)
         {
-            if (IconImporter.DeleteIcon(entry.Name, entry.Prefix))
+            if (IconImporter.Default.DeleteIcon(entry.Name, entry.Prefix))
             {
                 entry.IsImported = false;
                 _db.MarkDeleted(entry.Name);
@@ -732,7 +742,7 @@ namespace IconBrowser.UI
 
             foreach (var entry in toDelete)
             {
-                if (IconImporter.DeleteIcon(entry.Name, entry.Prefix))
+                if (IconImporter.Default.DeleteIcon(entry.Name, entry.Prefix))
                 {
                     entry.IsImported = false;
                     _db.MarkDeleted(entry.Name);
@@ -743,13 +753,16 @@ namespace IconBrowser.UI
             OnIconImported?.Invoke();
         }
 
-        async void OnVariantSelected(IconEntry variant)
+        void OnVariantSelected(IconEntry variant)
         {
-            // Look up variants for this entry
+            AsyncHelper.FireAndForget(OnVariantSelectedAsync(variant));
+        }
+
+        async Task OnVariantSelectedAsync(IconEntry variant)
+        {
             var (baseName, _) = VariantGrouper.ParseVariant(variant.Name, _currentPrefix);
             _variantMap.TryGetValue(baseName, out var variants);
 
-            // Ensure preview is loaded
             if (variant.PreviewSprite == null && variant.LocalAsset == null)
             {
                 var cached = _previewCache.GetPreview(variant.Prefix, variant.Name);
@@ -839,7 +852,7 @@ namespace IconBrowser.UI
             var names = new List<string>(nameSet);
 
             // Load previews asynchronously (SvgPreviewCache caps at 100 per batch)
-            _ = _previewCache.LoadPreviewBatchAsync(_currentPrefix, names, () =>
+            AsyncHelper.FireAndForget(_previewCache.LoadPreviewBatchAsync(_currentPrefix, names, () =>
             {
                 // Update representative entries
                 for (int i = first; i <= last && i < _groupedEntries.Count; i++)
@@ -855,7 +868,7 @@ namespace IconBrowser.UI
                     if (preview != null) v.PreviewSprite = preview;
                 }
                 _grid.RefreshPreviews();
-            });
+            }));
         }
 
         void ShowLoading(bool loading)
@@ -865,6 +878,11 @@ namespace IconBrowser.UI
 
         public void Detach()
         {
+            _debounceHandle?.Pause();
+            _debounceHandle = null;
+            _scrollDebounceHandle?.Pause();
+            _scrollDebounceHandle = null;
+
             _grid.OnIconSelected -= OnSelected;
             _grid.OnVisibleRangeChanged -= OnVisibleRangeChangedDebounced;
             _grid.OnSelectionChanged -= OnGridSelectionChanged;

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using IconBrowser.Data;
 using IconBrowser.Import;
 using IconBrowser.UI;
@@ -307,14 +308,18 @@ namespace IconBrowser
                 _browseTab.Search(evt.newValue);
         }
 
-        async void LoadLibrariesAsync()
+        void LoadLibrariesAsync()
+        {
+            AsyncHelper.FireAndForget(LoadLibrariesInternalAsync());
+        }
+
+        async Task LoadLibrariesInternalAsync()
         {
             await _db.LoadLibrariesAsync();
             if (!_db.LibrariesLoaded) return;
 
             _sortedLibraries = _db.GetSortedLibraries();
 
-            // Pass libraries to BrowseTab's sidebar list
             _browseTab.SetLibraries(_sortedLibraries);
 
             UpdateStatusBar();

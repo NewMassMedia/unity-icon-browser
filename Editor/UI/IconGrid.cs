@@ -927,7 +927,7 @@ namespace IconBrowser.UI
             return StyleKeyword.None;
         }
 
-        static string TruncateName(string name)
+        internal static string TruncateName(string name)
         {
             return name.Length > 9 ? name.Substring(0, 8) + ".." : name;
         }

@@ -10,9 +10,13 @@ namespace IconBrowser.Data
 {
     /// <summary>
     /// Manages local (imported) and remote (Iconify) icon data.
+    /// Accepts IIconifyClient and IIconManifest for dependency injection.
     /// </summary>
     public class IconDatabase
     {
+        readonly IIconifyClient _client;
+        readonly IIconManifest _manifest;
+
         readonly List<IconEntry> _localIcons = new();
         readonly Dictionary<string, IconLibrary> _libraries = new();
         readonly Dictionary<string, List<string>> _collectionCache = new();
@@ -28,15 +32,29 @@ namespace IconBrowser.Data
         public event Action OnLocalIconsChanged;
 
         /// <summary>
+        /// Creates an IconDatabase with explicit dependencies.
+        /// </summary>
+        public IconDatabase(IIconifyClient client, IIconManifest manifest)
+        {
+            _client = client ?? throw new ArgumentNullException(nameof(client));
+            _manifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
+        }
+
+        /// <summary>
+        /// Creates an IconDatabase using default implementations (backward compatibility).
+        /// </summary>
+        public IconDatabase() : this(IconifyClient.Default, IconManifest.Default) { }
+
+        /// <summary>
         /// Scans the entire project for SVG VectorImage assets.
         /// </summary>
         public void ScanLocalIcons()
         {
             _localIcons.Clear();
             _importedNames.Clear();
-            IconManifest.Invalidate();
+            _manifest.Invalidate();
 
-            var manifest = IconManifest.GetAll();
+            var manifest = _manifest.GetAll();
             var guids = AssetDatabase.FindAssets("t:VectorImage");
             foreach (var guid in guids)
             {
@@ -103,7 +121,6 @@ namespace IconBrowser.Data
         /// </summary>
         public int ReassignUnknownIcons(string newPrefix)
         {
-            // Collect unknown icon names
             var unknownNames = _localIcons
                 .Where(e => e.Prefix == "unknown")
                 .Select(e => e.Name)
@@ -111,9 +128,8 @@ namespace IconBrowser.Data
 
             if (unknownNames.Count == 0) return 0;
 
-            // Add missing entries to manifest + fix "unknown" entries
-            int added = IconManifest.AddMissing(unknownNames, newPrefix);
-            int fixed2 = IconManifest.ReassignUnknowns(newPrefix);
+            int added = _manifest.AddMissing(unknownNames, newPrefix);
+            int fixed2 = _manifest.ReassignUnknowns(newPrefix);
             int total = added + fixed2;
 
             if (total > 0) ScanLocalIcons();
@@ -129,7 +145,7 @@ namespace IconBrowser.Data
 
             try
             {
-                var collections = await IconifyClient.GetCollectionsAsync();
+                var collections = await _client.GetCollectionsAsync();
                 _libraries.Clear();
                 foreach (var kv in collections)
                 {
@@ -145,7 +161,6 @@ namespace IconBrowser.Data
 
         /// <summary>
         /// Gets sorted libraries list for dropdown display.
-        /// Lucide first, then popular libs, then grouped by category.
         /// </summary>
         public List<IconLibrary> GetSortedLibraries()
         {
@@ -162,7 +177,6 @@ namespace IconBrowser.Data
                 if (aPop && !bPop) return -1;
                 if (!aPop && bPop) return 1;
 
-                // Then by category
                 int catCmp = string.Compare(a.Category ?? "", b.Category ?? "", StringComparison.OrdinalIgnoreCase);
                 if (catCmp != 0) return catCmp;
 
@@ -173,7 +187,6 @@ namespace IconBrowser.Data
 
         /// <summary>
         /// Fetches all icon names for a given collection prefix.
-        /// Results are cached. Also caches category data.
         /// </summary>
         public async Task<List<string>> GetCollectionIconsAsync(string prefix)
         {
@@ -182,7 +195,7 @@ namespace IconBrowser.Data
 
             try
             {
-                var data = await IconifyClient.GetCollectionAsync(prefix);
+                var data = await _client.GetCollectionAsync(prefix);
                 _collectionCache[prefix] = data.IconNames;
 
                 if (data.Categories != null && data.Categories.Count > 0)
@@ -198,7 +211,7 @@ namespace IconBrowser.Data
         }
 
         /// <summary>
-        /// Returns category names for a given collection prefix (cached from GetCollectionIconsAsync).
+        /// Returns category names for a given collection prefix.
         /// </summary>
         public List<string> GetCategories(string prefix)
         {
@@ -225,7 +238,7 @@ namespace IconBrowser.Data
         {
             try
             {
-                var result = await IconifyClient.SearchAsync(query, prefix, limit);
+                var result = await _client.SearchAsync(query, prefix, limit);
                 if (result?.Icons == null) return new List<IconEntry>();
                 return result.Icons.Select(fullName =>
                 {
@@ -251,7 +264,6 @@ namespace IconBrowser.Data
 
         /// <summary>
         /// Creates IconEntry list from a list of icon names (from collection).
-        /// Fills Categories from cached category data.
         /// </summary>
         public List<IconEntry> CreateEntries(string prefix, List<string> names)
         {
@@ -295,6 +307,14 @@ namespace IconBrowser.Data
         {
             _importedNames[name] = prefix;
             ScanLocalIcons();
+        }
+
+        /// <summary>
+        /// Sets imported state without triggering a full rescan. For testing only.
+        /// </summary>
+        internal void SetImportedState(string name, string prefix)
+        {
+            _importedNames[name] = prefix;
         }
 
         /// <summary>

@@ -7,13 +7,20 @@ namespace IconBrowser.Data
     /// <summary>
     /// Tracks which library each imported icon came from.
     /// Stored as a JSON file alongside the icons folder.
+    /// Implements IIconManifest for dependency injection.
+    /// Static convenience methods delegate to <see cref="Default"/>.
     /// </summary>
-    static class IconManifest
+    class IconManifest : IIconManifest
     {
-        static Dictionary<string, string> _data;
-        static string _loadedPath;
+        Dictionary<string, string> _data;
+        string _loadedPath;
 
-        static string ManifestPath
+        /// <summary>
+        /// Shared default instance for backward compatibility.
+        /// </summary>
+        public static readonly IconManifest Default = new();
+
+        string ManifestPath
         {
             get
             {
@@ -22,66 +29,44 @@ namespace IconBrowser.Data
             }
         }
 
-        /// <summary>
-        /// Gets the source library prefix for a given icon name.
-        /// Returns null if unknown.
-        /// </summary>
-        public static string GetPrefix(string name)
+        #region IIconManifest (instance methods)
+
+        public string GetPrefix(string name)
         {
             EnsureLoaded();
             return _data.TryGetValue(name, out var p) ? p : null;
         }
 
-        /// <summary>
-        /// Records an icon's source library.
-        /// </summary>
-        public static void Set(string name, string prefix)
+        public void Set(string name, string prefix)
         {
             EnsureLoaded();
             _data[name] = prefix;
             Save();
         }
 
-        /// <summary>
-        /// Removes an icon from the manifest.
-        /// </summary>
-        public static void Remove(string name)
+        public void Remove(string name)
         {
             EnsureLoaded();
             if (_data.Remove(name))
                 Save();
         }
 
-        /// <summary>
-        /// Returns all tracked icon-to-prefix mappings.
-        /// </summary>
-        public static IReadOnlyDictionary<string, string> GetAll()
+        public IReadOnlyDictionary<string, string> GetAll()
         {
             EnsureLoaded();
             return _data;
         }
 
-        /// <summary>
-        /// Returns distinct library prefixes present in imported icons.
-        /// </summary>
-        public static HashSet<string> GetPrefixes()
+        public HashSet<string> GetPrefixes()
         {
             EnsureLoaded();
             return new HashSet<string>(_data.Values);
         }
 
-        /// <summary>
-        /// Reassigns all icons with "unknown" prefix to the given prefix and saves.
-        /// Returns the number of icons reassigned.
-        /// </summary>
-        public static int ReassignUnknowns(string newPrefix)
+        public int ReassignUnknowns(string newPrefix)
         {
             EnsureLoaded();
             int count = 0;
-
-            // Find icon names that are NOT in the manifest yet (will show as "unknown")
-            // We can't know them here, so this is called from IconDatabase which passes names.
-            // Instead, fix entries already marked "unknown" in the data.
             var toFix = new List<string>();
             foreach (var kv in _data)
             {
@@ -97,11 +82,7 @@ namespace IconBrowser.Data
             return count;
         }
 
-        /// <summary>
-        /// Adds missing icons to the manifest with the given prefix.
-        /// Returns the number of icons added.
-        /// </summary>
-        public static int AddMissing(IEnumerable<string> names, string prefix)
+        public int AddMissing(IEnumerable<string> names, string prefix)
         {
             EnsureLoaded();
             int count = 0;
@@ -117,16 +98,28 @@ namespace IconBrowser.Data
             return count;
         }
 
-        /// <summary>
-        /// Forces a reload from disk on next access.
-        /// </summary>
-        public static void Invalidate()
+        public void Invalidate()
         {
             _data = null;
             _loadedPath = null;
         }
 
-        static void EnsureLoaded()
+        #endregion
+
+        #region Static convenience methods (backward compatibility)
+
+        public static string GetPrefixStatic(string name) => Default.GetPrefix(name);
+        public static void SetStatic(string name, string prefix) => Default.Set(name, prefix);
+        public static void RemoveStatic(string name) => Default.Remove(name);
+        public static IReadOnlyDictionary<string, string> GetAllStatic() => Default.GetAll();
+        public static HashSet<string> GetPrefixesStatic() => Default.GetPrefixes();
+        public static int ReassignUnknownsStatic(string newPrefix) => Default.ReassignUnknowns(newPrefix);
+        public static int AddMissingStatic(IEnumerable<string> names, string prefix) => Default.AddMissing(names, prefix);
+        public static void InvalidateStatic() => Default.Invalidate();
+
+        #endregion
+
+        void EnsureLoaded()
         {
             var path = ManifestPath;
             if (_data != null && _loadedPath == path) return;
@@ -140,7 +133,7 @@ namespace IconBrowser.Data
             ParseJson(json);
         }
 
-        static void Save()
+        void Save()
         {
             var path = ManifestPath;
             var dir = Path.GetDirectoryName(path);
@@ -150,7 +143,7 @@ namespace IconBrowser.Data
             File.WriteAllText(path, ToJson());
         }
 
-        static string ToJson()
+        string ToJson()
         {
             var sb = new StringBuilder();
             sb.AppendLine("{");
@@ -158,7 +151,7 @@ namespace IconBrowser.Data
             foreach (var kv in _data)
             {
                 if (!first) sb.AppendLine(",");
-                sb.Append($"  \"{Escape(kv.Key)}\": \"{Escape(kv.Value)}\"");
+                sb.Append($"  \"{SimpleJsonParser.Escape(kv.Key)}\": \"{SimpleJsonParser.Escape(kv.Value)}\"");
                 first = false;
             }
             sb.AppendLine();
@@ -166,58 +159,17 @@ namespace IconBrowser.Data
             return sb.ToString();
         }
 
-        static void ParseJson(string json)
+        void ParseJson(string json)
         {
-            json = json.Trim();
-            if (json.Length < 2 || json[0] != '{') return;
-
-            int i = 1;
-            while (i < json.Length - 1)
+            var obj = SimpleJsonParser.ParseJsonObject(json);
+            foreach (var kv in obj)
             {
-                SkipWs(json, ref i);
-                if (i >= json.Length - 1 || json[i] == '}') break;
-                if (json[i] == ',') { i++; continue; }
-
-                var key = ReadStr(json, ref i);
-                SkipWs(json, ref i);
-                if (i < json.Length && json[i] == ':') i++;
-                SkipWs(json, ref i);
-                var val = ReadStr(json, ref i);
-
+                var key = SimpleJsonParser.Unescape(kv.Key);
+                var val = SimpleJsonParser.UnquoteJson(kv.Value);
+                val = SimpleJsonParser.Unescape(val);
                 if (!string.IsNullOrEmpty(key) && !string.IsNullOrEmpty(val))
                     _data[key] = val;
             }
-        }
-
-        static void SkipWs(string s, ref int i)
-        {
-            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
-        }
-
-        static string ReadStr(string s, ref int i)
-        {
-            if (i >= s.Length || s[i] != '"') return "";
-            i++;
-            int start = i;
-            while (i < s.Length && s[i] != '"')
-            {
-                if (s[i] == '\\') i++;
-                i++;
-            }
-            var result = s.Substring(start, i - start);
-            if (i < s.Length) i++;
-            return Unescape(result);
-        }
-
-        static string Unescape(string s)
-        {
-            if (s.IndexOf('\\') < 0) return s;
-            return s.Replace("\\\"", "\"").Replace("\\\\", "\\");
-        }
-
-        static string Escape(string s)
-        {
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
         }
     }
 }

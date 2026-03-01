@@ -9,9 +9,13 @@ namespace IconBrowser.Import
 {
     /// <summary>
     /// Handles downloading SVG from Iconify, converting for Unity, and importing with correct settings.
+    /// Implements IIconImporter for dependency injection.
+    /// Static convenience methods delegate to <see cref="Default"/>.
     /// </summary>
-    public static class IconImporter
+    public class IconImporter : IIconImporter
     {
+        static readonly Regex ClassAttributeRegex = new(@"\s+class=""[^""]*""", RegexOptions.Compiled);
+
         static readonly string META_TEMPLATE = @"fileFormatVersion: 2
 guid: {0}
 ScriptedImporter:
@@ -67,12 +71,28 @@ ScriptedImporter:
     PhysicsOutlines: []
 ";
 
+        readonly IIconifyClient _client;
+        readonly IIconManifest _manifest;
+
         /// <summary>
-        /// Downloads and imports an icon from Iconify.
+        /// Shared default instance for backward compatibility.
         /// </summary>
-        public static async Task<bool> ImportIconAsync(string prefix, string name)
+        public static readonly IconImporter Default = new(IconifyClient.Default, IconManifest.Default);
+
+        /// <summary>
+        /// Creates an IconImporter with explicit dependencies.
+        /// </summary>
+        public IconImporter(IIconifyClient client, IIconManifest manifest)
         {
-            var svg = await IconifyClient.GetSvgAsync(prefix, name);
+            _client = client;
+            _manifest = manifest;
+        }
+
+        #region IIconImporter (instance methods)
+
+        public async Task<bool> ImportIconAsync(string prefix, string name)
+        {
+            var svg = await _client.GetSvgAsync(prefix, name);
             var converted = ConvertForUnity(svg);
 
             var iconsDir = $"{IconBrowserSettings.IconsPath}/{prefix}";
@@ -93,7 +113,7 @@ ScriptedImporter:
                 AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
                 ApplyImportSettings(assetPath);
 
-                IconManifest.Set(name, prefix);
+                _manifest.Set(name, prefix);
                 Debug.Log($"[IconBrowser] Imported: {name} from {prefix}");
                 return true;
             }
@@ -107,32 +127,62 @@ ScriptedImporter:
         }
 
         /// <summary>
-        /// Converts SVG content for Unity compatibility:
-        /// - stroke="currentColor" -> stroke="#FFFFFF"
-        /// - Removes class attributes
-        /// - Normalizes width/height
+        /// Converts SVG content for Unity compatibility.
         /// </summary>
-        public static string ConvertForUnity(string svg)
+        public string ConvertForUnity(string svg)
         {
             svg = svg.Replace("stroke=\"currentColor\"", "stroke=\"#FFFFFF\"");
             svg = svg.Replace("fill=\"currentColor\"", "fill=\"#FFFFFF\"");
             svg = svg.Replace("width=\"1em\"", "width=\"24\"");
             svg = svg.Replace("height=\"1em\"", "height=\"24\"");
-            svg = Regex.Replace(svg, @"\s+class=""[^""]*""", "");
+            svg = ClassAttributeRegex.Replace(svg, "");
             return svg;
         }
 
-        /// <summary>
-        /// Applies correct SVG import settings via SerializedObject.
-        /// </summary>
+        public bool DeleteIcon(string name, string prefix)
+        {
+            var iconsDir = $"{IconBrowserSettings.IconsPath}/{prefix}";
+            var assetPath = $"{iconsDir}/{name}.svg";
+            if (!File.Exists(Path.GetFullPath(assetPath)))
+                return false;
+
+            return AssetDatabase.DeleteAsset(assetPath);
+        }
+
+        public bool DeleteIconByPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath) || !File.Exists(Path.GetFullPath(assetPath)))
+                return false;
+
+            return AssetDatabase.DeleteAsset(assetPath);
+        }
+
+        #endregion
+
+        #region Static convenience methods (backward compatibility)
+
+        public static Task<bool> ImportIconStaticAsync(string prefix, string name)
+            => Default.ImportIconAsync(prefix, name);
+
+        public static string ConvertForUnityStatic(string svg)
+            => Default.ConvertForUnity(svg);
+
+        public static bool DeleteIconStatic(string name, string prefix)
+            => Default.DeleteIcon(name, prefix);
+
+        public static bool DeleteIconByPathStatic(string assetPath)
+            => Default.DeleteIconByPath(assetPath);
+
+        #endregion
+
         static void ApplyImportSettings(string assetPath)
         {
             var importer = AssetImporter.GetAtPath(assetPath);
             if (importer == null) return;
 
             var so = new SerializedObject(importer);
-            SetPropertyInt(so, "svgType", 3);           // VectorImage
-            SetPropertyInt(so, "viewportOptions", 1);    // SVG Document
+            SetPropertyInt(so, "svgType", 3);
+            SetPropertyInt(so, "viewportOptions", 1);
             SetPropertyInt(so, "filterMode", IconBrowserSettings.FilterMode);
             SetPropertyInt(so, "sampleCount", IconBrowserSettings.SampleCount);
 
@@ -148,28 +198,6 @@ ScriptedImporter:
             var prop = so.FindProperty(propName);
             if (prop != null)
                 prop.intValue = value;
-        }
-
-        /// <summary>
-        /// Deletes a locally imported icon.
-        /// </summary>
-        public static bool DeleteIcon(string name, string prefix)
-        {
-            var iconsDir = $"{IconBrowserSettings.IconsPath}/{prefix}";
-            var assetPath = $"{iconsDir}/{name}.svg";
-            if (!File.Exists(Path.GetFullPath(assetPath)))
-                return false;
-
-            return AssetDatabase.DeleteAsset(assetPath);
-        }
-
-        /// <summary>Deletes an icon by its actual asset path (for icons whose prefix may not match the folder).</summary>
-        public static bool DeleteIconByPath(string assetPath)
-        {
-            if (string.IsNullOrEmpty(assetPath) || !File.Exists(Path.GetFullPath(assetPath)))
-                return false;
-
-            return AssetDatabase.DeleteAsset(assetPath);
         }
     }
 }

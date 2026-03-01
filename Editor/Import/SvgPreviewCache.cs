@@ -19,8 +19,10 @@ namespace IconBrowser.Import
     {
         const string TEMP_ASSETS_DIR = "Assets/_IconBrowserTemp";
         const int MAX_BATCH_SIZE = 100;
+        const int MAX_ATLAS_COUNT = 16; // ~64MB limit for LRU eviction
 
         readonly Dictionary<string, IconAtlas> _atlases = new();
+        readonly Dictionary<string, long> _atlasAccessTime = new(); // prefix → tick
         readonly HashSet<string> _pendingKeys = new();
         readonly HashSet<string> _failedKeys = new();
         readonly Queue<(string prefix, List<string> names, Action onComplete)> _queue = new();
@@ -86,26 +88,34 @@ namespace IconBrowser.Import
 
         async Task FetchAndPackBatch(string prefix, List<string> names, Action onComplete)
         {
+            var writtenPaths = new List<(string name, string svgPath)>();
             try
             {
                 // 1. Fetch SVG bodies from Iconify API
-                var svgBodies = await IconifyClient.GetIconsBatchAsync(prefix, names.ToArray());
+                var svgBodies = await IconifyClient.Default.GetIconsBatchAsync(prefix, names.ToArray());
                 if (svgBodies.Count == 0) return;
 
                 // 2. Write SVGs to temp Assets folder
                 EnsureTempAssetsDir();
-                var writtenPaths = new List<(string name, string svgPath)>();
                 foreach (var kv in svgBodies)
                 {
                     var svgPath = $"{TEMP_ASSETS_DIR}/{prefix}_{kv.Key}.svg";
                     var fullPath = Path.GetFullPath(svgPath);
-                    File.WriteAllText(fullPath, kv.Value);
+                    try
+                    {
+                        File.WriteAllText(fullPath, kv.Value);
 
-                    var metaPath = fullPath + ".meta";
-                    if (!File.Exists(metaPath))
-                        File.WriteAllText(metaPath, GenerateTextureMeta(Guid.NewGuid().ToString("N")));
+                        var metaPath = fullPath + ".meta";
+                        if (!File.Exists(metaPath))
+                            File.WriteAllText(metaPath, GenerateTextureMeta(Guid.NewGuid().ToString("N")));
 
-                    writtenPaths.Add((kv.Key, svgPath));
+                        writtenPaths.Add((kv.Key, svgPath));
+                    }
+                    catch (IOException e)
+                    {
+                        _failedKeys.Add($"{prefix}_{kv.Key}");
+                        Debug.LogWarning($"[IconBrowser] Failed to write SVG file {fullPath}: {e.Message}");
+                    }
                 }
 
                 // 3. Batch-import SVGs (StartAssetEditing suppresses per-file refresh)
@@ -141,9 +151,6 @@ namespace IconBrowser.Import
                 // 5. Save atlas to disk (PNG + index)
                 atlas.Save();
 
-                // 6. Clean up temp files immediately
-                CleanupTempBatch(writtenPaths);
-
                 Debug.Log($"[IconBrowser] Packed {writtenPaths.Count} previews into {prefix} atlas ({atlas.Count} total)");
                 onComplete?.Invoke();
             }
@@ -153,6 +160,10 @@ namespace IconBrowser.Import
             }
             finally
             {
+                // Clean up temp files even on failure to prevent leaks
+                if (writtenPaths.Count > 0)
+                    CleanupTempBatch(writtenPaths);
+
                 foreach (var name in names)
                     _pendingKeys.Remove($"{prefix}_{name}");
             }
@@ -201,12 +212,18 @@ namespace IconBrowser.Import
 
         IconAtlas GetOrLoadAtlas(string prefix)
         {
-            if (_atlases.TryGetValue(prefix, out var cached)) return cached;
+            if (_atlases.TryGetValue(prefix, out var cached))
+            {
+                TouchAtlas(prefix);
+                return cached;
+            }
 
             var loaded = IconAtlas.Load(prefix);
             if (loaded != null)
             {
                 _atlases[prefix] = loaded;
+                TouchAtlas(prefix);
+                EvictLruIfNeeded();
                 return loaded;
             }
             return null;
@@ -214,10 +231,45 @@ namespace IconBrowser.Import
 
         IconAtlas GetOrCreateAtlas(string prefix)
         {
-            if (_atlases.TryGetValue(prefix, out var existing)) return existing;
+            if (_atlases.TryGetValue(prefix, out var existing))
+            {
+                TouchAtlas(prefix);
+                return existing;
+            }
             var atlas = IconAtlas.Create(prefix);
             _atlases[prefix] = atlas;
+            TouchAtlas(prefix);
+            EvictLruIfNeeded();
             return atlas;
+        }
+
+        void TouchAtlas(string prefix)
+        {
+            _atlasAccessTime[prefix] = System.DateTime.UtcNow.Ticks;
+        }
+
+        void EvictLruIfNeeded()
+        {
+            while (_atlases.Count > MAX_ATLAS_COUNT)
+            {
+                // Find the least recently used atlas
+                string lruPrefix = null;
+                long oldestTick = long.MaxValue;
+                foreach (var kv in _atlasAccessTime)
+                {
+                    if (kv.Value < oldestTick && _atlases.ContainsKey(kv.Key))
+                    {
+                        oldestTick = kv.Value;
+                        lruPrefix = kv.Key;
+                    }
+                }
+                if (lruPrefix == null) break;
+
+                _atlases[lruPrefix].Destroy();
+                _atlases.Remove(lruPrefix);
+                _atlasAccessTime.Remove(lruPrefix);
+                Debug.Log($"[IconBrowser] Evicted LRU atlas: {lruPrefix}");
+            }
         }
 
         /// <summary>

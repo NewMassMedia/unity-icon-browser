@@ -202,25 +202,26 @@ namespace IconBrowser.Import
         static Color[] GetResizedPixels(Texture2D source, int targetW, int targetH)
         {
             var rt = RenderTexture.GetTemporary(targetW, targetH, 0, RenderTextureFormat.ARGB32);
+            var prev = RenderTexture.active;
+            Texture2D resized = null;
             try
             {
                 rt.filterMode = FilterMode.Bilinear;
                 Graphics.Blit(source, rt);
 
-                var prev = RenderTexture.active;
                 RenderTexture.active = rt;
-                var resized = new Texture2D(targetW, targetH, TextureFormat.RGBA32, false);
+                resized = new Texture2D(targetW, targetH, TextureFormat.RGBA32, false);
                 resized.ReadPixels(new Rect(0, 0, targetW, targetH), 0, 0);
                 resized.Apply();
-                RenderTexture.active = prev;
 
-                var pixels = resized.GetPixels();
-                UnityEngine.Object.DestroyImmediate(resized);
-                return pixels;
+                return resized.GetPixels();
             }
             finally
             {
+                RenderTexture.active = prev;
                 RenderTexture.ReleaseTemporary(rt);
+                if (resized != null)
+                    UnityEngine.Object.DestroyImmediate(resized);
             }
         }
 
@@ -253,7 +254,7 @@ namespace IconBrowser.Import
 
         #endregion
 
-        #region Index Serialization (simple key:slot pairs, avoids Newtonsoft)
+        #region Index Serialization
 
         string SerializeIndex()
         {
@@ -263,7 +264,7 @@ namespace IconBrowser.Import
             foreach (var kv in _index)
             {
                 if (!first) sb.Append(',');
-                sb.Append('"').Append(EscapeJson(kv.Key)).Append("\":").Append(kv.Value);
+                sb.Append('"').Append(Data.SimpleJsonParser.Escape(kv.Key)).Append("\":").Append(kv.Value);
                 first = false;
             }
             sb.Append('}');
@@ -273,51 +274,12 @@ namespace IconBrowser.Import
         void DeserializeIndex(string json)
         {
             _index.Clear();
-            json = json.Trim();
-            if (json.Length < 2 || json[0] != '{') return;
-
-            int i = 1;
-            while (i < json.Length - 1)
+            var obj = Data.SimpleJsonParser.ParseJsonObject(json);
+            foreach (var kv in obj)
             {
-                SkipWs(json, ref i);
-                if (i >= json.Length - 1 || json[i] == '}') break;
-                if (json[i] == ',') { i++; continue; }
-
-                var key = ReadString(json, ref i);
-                SkipWs(json, ref i);
-                if (i < json.Length && json[i] == ':') i++;
-                SkipWs(json, ref i);
-
-                int numStart = i;
-                while (i < json.Length && json[i] != ',' && json[i] != '}') i++;
-                if (int.TryParse(json.Substring(numStart, i - numStart).Trim(), out var slot))
-                    _index[key] = slot;
+                if (int.TryParse(kv.Value.Trim(), out var slot))
+                    _index[kv.Key] = slot;
             }
-        }
-
-        static void SkipWs(string s, ref int i)
-        {
-            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
-        }
-
-        static string ReadString(string s, ref int i)
-        {
-            if (i >= s.Length || s[i] != '"') return "";
-            i++;
-            int start = i;
-            while (i < s.Length && s[i] != '"')
-            {
-                if (s[i] == '\\') i++;
-                i++;
-            }
-            var result = s.Substring(start, i - start);
-            if (i < s.Length) i++;
-            return result;
-        }
-
-        static string EscapeJson(string s)
-        {
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
         }
 
         #endregion

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -8,75 +9,96 @@ namespace IconBrowser.Data
 {
     /// <summary>
     /// HTTP client wrapper for the Iconify API.
+    /// Implements IIconifyClient for dependency injection.
+    /// Static convenience methods delegate to <see cref="Default"/>.
     /// </summary>
-    public static class IconifyClient
+    public class IconifyClient : IIconifyClient
     {
         const string BASE_URL = "https://api.iconify.design";
+        const int MAX_RETRIES = 2;
 
         /// <summary>
-        /// Fetches all available icon collections (200+ libraries).
-        /// Returns a dictionary of prefix -> collection info JSON.
+        /// Shared default instance for backward compatibility.
         /// </summary>
-        public static async Task<Dictionary<string, IconLibrary>> GetCollectionsAsync()
+        public static readonly IconifyClient Default = new();
+
+        #region IIconifyClient (instance methods)
+
+        public async Task<Dictionary<string, IconLibrary>> GetCollectionsAsync(CancellationToken ct = default)
         {
-            var json = await FetchAsync($"{BASE_URL}/collections");
+            var json = await FetchAsync($"{BASE_URL}/collections", ct);
             return ParseCollections(json);
         }
 
-        /// <summary>
-        /// Fetches all icon names in a specific collection.
-        /// </summary>
-        public static async Task<CollectionData> GetCollectionAsync(string prefix)
+        public async Task<CollectionData> GetCollectionAsync(string prefix, CancellationToken ct = default)
         {
-            var json = await FetchAsync($"{BASE_URL}/collection?prefix={prefix}&info=true&chars=false");
+            var json = await FetchAsync($"{BASE_URL}/collection?prefix={prefix}&info=true&chars=false", ct);
             return ParseCollection(json, prefix);
         }
 
-        /// <summary>
-        /// Searches icons across a specific prefix (or all if prefix is empty).
-        /// </summary>
-        public static async Task<SearchResult> SearchAsync(string query, string prefix = "", int limit = 64)
+        public async Task<SearchResult> SearchAsync(string query, string prefix = "", int limit = 64, CancellationToken ct = default)
         {
             var url = $"{BASE_URL}/search?query={Uri.EscapeDataString(query)}&limit={limit}";
             if (!string.IsNullOrEmpty(prefix))
                 url += $"&prefix={prefix}";
-            var json = await FetchAsync(url);
+            var json = await FetchAsync(url, ct);
             return ParseSearchResult(json);
         }
 
-        /// <summary>
-        /// Fetches SVG bodies for multiple icons in one request.
-        /// </summary>
-        public static async Task<Dictionary<string, string>> GetIconsBatchAsync(string prefix, string[] names)
+        public async Task<Dictionary<string, string>> GetIconsBatchAsync(string prefix, string[] names, CancellationToken ct = default)
         {
             if (names.Length == 0) return new Dictionary<string, string>();
 
             var icons = string.Join(",", names);
-            var json = await FetchAsync($"{BASE_URL}/{prefix}.json?icons={icons}");
+            var json = await FetchAsync($"{BASE_URL}/{prefix}.json?icons={icons}", ct);
             return ParseIconsBatch(json, prefix);
         }
 
-        /// <summary>
-        /// Fetches a single icon as a complete SVG string.
-        /// </summary>
-        public static async Task<string> GetSvgAsync(string prefix, string name)
+        public async Task<string> GetSvgAsync(string prefix, string name, CancellationToken ct = default)
         {
-            return await FetchAsync($"{BASE_URL}/{prefix}/{name}.svg");
+            return await FetchAsync($"{BASE_URL}/{prefix}/{name}.svg", ct);
         }
 
-        const int MAX_RETRIES = 2;
+        #endregion
 
-        static async Task<string> FetchAsync(string url)
+        #region Static convenience methods (backward compatibility)
+
+        public static Task<Dictionary<string, IconLibrary>> GetCollectionsStaticAsync()
+            => Default.GetCollectionsAsync();
+
+        public static Task<CollectionData> GetCollectionStaticAsync(string prefix)
+            => Default.GetCollectionAsync(prefix);
+
+        public static Task<SearchResult> SearchStaticAsync(string query, string prefix = "", int limit = 64)
+            => Default.SearchAsync(query, prefix, limit);
+
+        public static Task<Dictionary<string, string>> GetIconsBatchStaticAsync(string prefix, string[] names)
+            => Default.GetIconsBatchAsync(prefix, names);
+
+        public static Task<string> GetSvgStaticAsync(string prefix, string name)
+            => Default.GetSvgAsync(prefix, name);
+
+        #endregion
+
+        #region HTTP
+
+        static async Task<string> FetchAsync(string url, CancellationToken ct = default)
         {
             Exception lastError = null;
             for (int attempt = 0; attempt <= MAX_RETRIES; attempt++)
             {
+                ct.ThrowIfCancellationRequested();
+
                 var request = UnityWebRequest.Get(url);
                 request.timeout = 15;
                 var op = request.SendWebRequest();
                 var tcs = new TaskCompletionSource<bool>();
                 op.completed += _ => tcs.SetResult(true);
-                await tcs.Task;
+
+                using (ct.Register(() => { request.Abort(); tcs.TrySetCanceled(); }))
+                {
+                    await tcs.Task;
+                }
 
                 if (request.result == UnityWebRequest.Result.Success)
                     return request.downloadHandler.text;
@@ -85,17 +107,18 @@ namespace IconBrowser.Data
                 request.Dispose();
 
                 if (attempt < MAX_RETRIES)
-                    await Task.Delay(500 * (attempt + 1));
+                    await Task.Delay(500 * (attempt + 1), ct);
             }
             throw lastError;
         }
 
-        #region JSON Parsing (manual — avoids Newtonsoft dependency)
+        #endregion
+
+        #region API Response Parsing
 
         static Dictionary<string, IconLibrary> ParseCollections(string json)
         {
             var result = new Dictionary<string, IconLibrary>();
-            // Parse top-level object: { "prefix": { "name": "...", "total": N, ... }, ... }
             var obj = ParseJsonObject(json);
             foreach (var kv in obj)
             {
@@ -136,13 +159,11 @@ namespace IconBrowser.Data
             var data = new CollectionData { Prefix = prefix, IconNames = new List<string>() };
             var obj = ParseJsonObject(json);
 
-            // "uncategorized" is a flat array of icon names
             if (obj.TryGetValue("uncategorized", out var uncategorized))
             {
                 data.IconNames.AddRange(ParseJsonStringArray(uncategorized));
             }
 
-            // "categories" is { "Category": ["icon1", "icon2"], ... }
             if (obj.TryGetValue("categories", out var categories))
             {
                 var catObj = ParseJsonObject(categories);
@@ -201,9 +222,7 @@ namespace IconBrowser.Data
                 if (!iconObj.TryGetValue("body", out var body)) continue;
 
                 var bodyStr = UnquoteJson(body);
-                // Unescape JSON string
                 bodyStr = bodyStr.Replace("\\\"", "\"").Replace("\\\\", "\\");
-                // Unity SVG parser does not support currentColor — replace with white
                 bodyStr = bodyStr.Replace("currentColor", "#FFFFFF");
 
                 int iw = width, ih = height;
@@ -220,126 +239,11 @@ namespace IconBrowser.Data
 
         #endregion
 
-        #region Minimal JSON Parser
+        #region JSON Delegation
 
-        /// <summary>
-        /// Parses a JSON object into key-value pairs (values are raw JSON strings).
-        /// Handles nested objects/arrays by tracking brace/bracket depth.
-        /// </summary>
-        static Dictionary<string, string> ParseJsonObject(string json)
-        {
-            var result = new Dictionary<string, string>();
-            json = json.Trim();
-            if (json.Length < 2 || json[0] != '{') return result;
-
-            int i = 1;
-            while (i < json.Length - 1)
-            {
-                SkipWhitespace(json, ref i);
-                if (i >= json.Length - 1 || json[i] == '}') break;
-                if (json[i] == ',') { i++; continue; }
-
-                var key = ReadJsonString(json, ref i);
-                SkipWhitespace(json, ref i);
-                if (i < json.Length && json[i] == ':') i++;
-                SkipWhitespace(json, ref i);
-                var value = ReadJsonValue(json, ref i);
-                result[key] = value;
-            }
-            return result;
-        }
-
-        static List<string> ParseJsonStringArray(string json)
-        {
-            var result = new List<string>();
-            json = json.Trim();
-            if (json.Length < 2 || json[0] != '[') return result;
-
-            int i = 1;
-            while (i < json.Length - 1)
-            {
-                SkipWhitespace(json, ref i);
-                if (i >= json.Length - 1 || json[i] == ']') break;
-                if (json[i] == ',') { i++; continue; }
-
-                if (json[i] == '"')
-                {
-                    result.Add(ReadJsonString(json, ref i));
-                }
-                else
-                {
-                    ReadJsonValue(json, ref i); // skip non-string values
-                }
-            }
-            return result;
-        }
-
-        static void SkipWhitespace(string json, ref int i)
-        {
-            while (i < json.Length && char.IsWhiteSpace(json[i])) i++;
-        }
-
-        static string ReadJsonString(string json, ref int i)
-        {
-            if (i >= json.Length || json[i] != '"') return "";
-            i++; // skip opening quote
-            int start = i;
-            while (i < json.Length)
-            {
-                if (json[i] == '\\') { i += 2; continue; }
-                if (json[i] == '"') break;
-                i++;
-            }
-            var result = json.Substring(start, i - start);
-            if (i < json.Length) i++; // skip closing quote
-            return result;
-        }
-
-        static string ReadJsonValue(string json, ref int i)
-        {
-            if (i >= json.Length) return "";
-
-            if (json[i] == '"')
-            {
-                int start = i;
-                ReadJsonString(json, ref i);
-                return json.Substring(start, i - start);
-            }
-
-            if (json[i] == '{' || json[i] == '[')
-            {
-                char open = json[i], close = open == '{' ? '}' : ']';
-                int depth = 1, start = i;
-                i++;
-                bool inString = false;
-                while (i < json.Length && depth > 0)
-                {
-                    if (json[i] == '\\' && inString) { i += 2; continue; }
-                    if (json[i] == '"') inString = !inString;
-                    if (!inString)
-                    {
-                        if (json[i] == open) depth++;
-                        else if (json[i] == close) depth--;
-                    }
-                    i++;
-                }
-                return json.Substring(start, i - start);
-            }
-
-            // number, bool, null
-            int vstart = i;
-            while (i < json.Length && json[i] != ',' && json[i] != '}' && json[i] != ']' && !char.IsWhiteSpace(json[i]))
-                i++;
-            return json.Substring(vstart, i - vstart);
-        }
-
-        static string UnquoteJson(string s)
-        {
-            s = s.Trim();
-            if (s.Length >= 2 && s[0] == '"' && s[s.Length - 1] == '"')
-                return s.Substring(1, s.Length - 2);
-            return s;
-        }
+        static Dictionary<string, string> ParseJsonObject(string json) => SimpleJsonParser.ParseJsonObject(json);
+        static List<string> ParseJsonStringArray(string json) => SimpleJsonParser.ParseJsonStringArray(json);
+        static string UnquoteJson(string s) => SimpleJsonParser.UnquoteJson(s);
 
         #endregion
     }

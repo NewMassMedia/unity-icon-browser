@@ -3,6 +3,10 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UIElements;
 
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("IconBrowser.Editor.Tests")]
+
 namespace IconBrowser.Data
 {
     /// <summary>
