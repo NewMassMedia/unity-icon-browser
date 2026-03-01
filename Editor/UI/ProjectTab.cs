@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
-using IconBrowser.Data;
-using IconBrowser.Import;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using IconBrowser.Data;
+using IconBrowser.Import;
 
 namespace IconBrowser.UI
 {
@@ -13,20 +13,22 @@ namespace IconBrowser.UI
     /// </summary>
     public class ProjectTab : VisualElement
     {
-        readonly IconDatabase _db;
-        readonly IconGrid _grid;
-        readonly IconDetailPanel _detail;
-        readonly VisualElement _libraryBar;
-        readonly Button _fixUnknownBtn;
-        readonly Button _refreshBtn;
-        ToastNotification _toast;
+        private readonly IconDatabase _db;
+        private readonly IconOperationService _ops;
+        private readonly IconGrid _grid;
+        private readonly IconDetailPanel _detail;
+        private readonly VisualElement _libraryBar;
+        private readonly Button _fixUnknownBtn;
+        private readonly Button _refreshBtn;
+        private ToastNotification _toast;
 
-        string _searchQuery = "";
-        string _prefixFilter = "";
+        private string _searchQuery = "";
+        private string _prefixFilter = "";
 
         public ProjectTab(IconDatabase db)
         {
             _db = db;
+            _ops = new IconOperationService(db, IconImporter.Default);
             AddToClassList("icon-tab");
 
             // Library filter bar (pill buttons)
@@ -53,12 +55,18 @@ namespace IconBrowser.UI
             body.Add(_detail);
 
             _grid.ShowActionButtons = true;
+            _grid.OnIconSelected -= OnSelected;
             _grid.OnIconSelected += OnSelected;
+            _grid.OnSelectionChanged -= OnGridSelectionChanged;
             _grid.OnSelectionChanged += OnGridSelectionChanged;
+            _grid.OnQuickDeleteClicked -= OnDelete;
             _grid.OnQuickDeleteClicked += OnDelete;
+            _detail.OnDeleteClicked -= OnDelete;
             _detail.OnDeleteClicked += OnDelete;
+            _detail.OnBatchDeleteClicked -= OnBatchDelete;
             _detail.OnBatchDeleteClicked += OnBatchDelete;
 
+            _db.OnLocalIconsChanged -= Refresh;
             _db.OnLocalIconsChanged += Refresh;
         }
 
@@ -83,7 +91,7 @@ namespace IconBrowser.UI
             Refresh();
         }
 
-        void OnLibraryFilterClicked(string prefix)
+        private void OnLibraryFilterClicked(string prefix)
         {
             _prefixFilter = prefix;
 
@@ -97,7 +105,7 @@ namespace IconBrowser.UI
             Refresh();
         }
 
-        void RefreshLibraryFilter()
+        private void RefreshLibraryFilter()
         {
             var prefixes = _db.GetLocalPrefixes();
 
@@ -128,7 +136,7 @@ namespace IconBrowser.UI
             _libraryBar.Add(_refreshBtn);
         }
 
-        void OnFixUnknown()
+        private void OnFixUnknown()
         {
             int count = _db.ReassignUnknownIcons("lucide");
             if (count > 0)
@@ -139,42 +147,31 @@ namespace IconBrowser.UI
             }
         }
 
-        void OnRefresh()
+        private void OnRefresh()
         {
             _db.ScanLocalIcons();
             RefreshLibraryFilter();
             Refresh();
         }
 
-        void Refresh()
+        private void Refresh()
         {
             var icons = _db.SearchLocal(_searchQuery, _prefixFilter);
             _grid.SetItems(icons);
             _detail.Clear();
         }
 
-        void OnSelected(IconEntry entry)
+        private void OnSelected(IconEntry entry)
         {
             _detail.ShowEntry(entry);
         }
 
-        void OnGridSelectionChanged(List<IconEntry> entries)
+        private void OnGridSelectionChanged(List<IconEntry> entries)
         {
-            if (entries.Count == 0)
-            {
-                _detail.Clear();
-            }
-            else if (entries.Count == 1)
-            {
-                _detail.ShowEntry(entries[0]);
-            }
-            else
-            {
-                _detail.ShowMultiSelection(entries);
-            }
+            _detail.HandleSelectionChanged(entries, OnSelected);
         }
 
-        void OnBatchDelete(List<IconEntry> entries)
+        private void OnBatchDelete(List<IconEntry> entries)
         {
             var toDelete = entries.Where(e => e.IsImported).ToList();
             if (toDelete.Count == 0) return;
@@ -185,43 +182,25 @@ namespace IconBrowser.UI
                 "Delete", "Cancel"))
                 return;
 
-            try
-            {
-                for (int i = 0; i < toDelete.Count; i++)
-                {
-                    var cancelled = EditorUtility.DisplayCancelableProgressBar(
-                        "Deleting Icons",
-                        $"Deleting {toDelete[i].Name}... ({i + 1}/{toDelete.Count})",
-                        (float)(i + 1) / toDelete.Count);
-                    if (cancelled) break;
-
-                    bool deleted = !string.IsNullOrEmpty(toDelete[i].LocalAssetPath)
-                        ? IconImporter.Default.DeleteIconByPath(toDelete[i].LocalAssetPath)
-                        : IconImporter.Default.DeleteIcon(toDelete[i].Name, toDelete[i].Prefix);
-
-                    if (deleted)
-                        _db.MarkDeleted(toDelete[i].Name);
-                }
-            }
-            finally
-            {
-                EditorUtility.ClearProgressBar();
-            }
+            int deletedCount = EditorProgressHelper.RunWithProgress(
+                "Deleting Icons",
+                "Deleting... ({0}/{1})",
+                (onProgress, isCancelled) => _ops.BatchDelete(entries, onProgress, isCancelled));
 
             _grid.ClearSelection();
             RefreshLibraryFilter();
-            _toast?.ShowError($"Deleted {toDelete.Count} icon(s)");
+            if (deletedCount > 0)
+                _toast?.ShowError($"Deleted {deletedCount} icon(s)");
         }
 
-        void OnDelete(IconEntry entry)
+        private void OnDelete(IconEntry entry)
         {
             bool deleted = !string.IsNullOrEmpty(entry.LocalAssetPath)
-                ? IconImporter.Default.DeleteIconByPath(entry.LocalAssetPath)
-                : IconImporter.Default.DeleteIcon(entry.Name, entry.Prefix);
+                ? _ops.DeleteByPath(entry.LocalAssetPath, entry.Name)
+                : _ops.Delete(entry.Name, entry.Prefix);
 
             if (deleted)
             {
-                _db.MarkDeleted(entry.Name);
                 _detail.Clear();
                 RefreshLibraryFilter();
                 Refresh();

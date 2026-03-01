@@ -12,6 +12,7 @@ namespace IconBrowser
 
         // Icon rendering
         public const int ICON_SIZE = 48;
+        public const int ICON_DISPLAY_SIZE = 24;
 
         // Atlas
         public const int ATLAS_SIZE = 2048;
@@ -27,6 +28,9 @@ namespace IconBrowser
 
         // UI label truncation
         public const int TRUNCATE_LENGTH = 9;
+
+        // Temp assets
+        public const string TEMP_ASSET_PATH = "Assets/_IconBrowserTemp";
 
         // HTTP
         public const int MAX_RETRIES = 2;

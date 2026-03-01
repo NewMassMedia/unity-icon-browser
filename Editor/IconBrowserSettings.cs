@@ -5,10 +5,10 @@ namespace IconBrowser
     /// <summary>
     /// EditorPrefs-based settings for the Icon Browser.
     /// </summary>
-    static class IconBrowserSettings
+    internal static class IconBrowserSettings
     {
-        const string PREF_ICONS_PATH = "IconBrowser_IconsPath";
-        const string DEFAULT_PATH = "Assets/CoreUI/Runtime/Resources/Icons";
+        private const string PREF_ICONS_PATH = "IconBrowser_IconsPath";
+        private const string DEFAULT_PATH = "Assets/CoreUI/Runtime/Resources/Icons";
 
         /// <summary>
         /// Target folder for imported icons.
@@ -19,8 +19,8 @@ namespace IconBrowser
             set => EditorPrefs.SetString(PREF_ICONS_PATH, value);
         }
 
-        const string PREF_FILTER_MODE = "IconBrowser_FilterMode";
-        const string PREF_SAMPLE_COUNT = "IconBrowser_SampleCount";
+        private const string PREF_FILTER_MODE = "IconBrowser_FilterMode";
+        private const string PREF_SAMPLE_COUNT = "IconBrowser_SampleCount";
 
         /// <summary>
         /// Texture filter mode: 0 = Point, 1 = Bilinear, 2 = Trilinear.

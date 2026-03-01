@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using IconBrowser.Data;
 using UnityEngine;
+using IconBrowser.Data;
 
 namespace IconBrowser.UI
 {
@@ -14,18 +14,18 @@ namespace IconBrowser.UI
     /// </summary>
     internal class BrowseDataController
     {
-        readonly IconDatabase _db;
+        private readonly IconDatabase _db;
 
-        string _currentPrefix = "lucide";
-        string _selectedCategory = "";
-        string _selectedVariant = "";
-        bool _isLoading;
-        string _pendingSearchQuery;
+        private string _currentPrefix = "lucide";
+        private string _selectedCategory = "";
+        private string _selectedVariant = "";
+        private bool _isLoading;
+        private string _pendingSearchQuery;
 
-        List<IconEntry> _allEntries = new();
-        List<IconEntry> _filteredEntries = new();
-        List<IconEntry> _groupedEntries = new();
-        Dictionary<string, List<IconEntry>> _variantMap = new();
+        private List<IconEntry> _allEntries = new();
+        private List<IconEntry> _filteredEntries = new();
+        private List<IconEntry> _groupedEntries = new();
+        private Dictionary<string, List<IconEntry>> _variantMap = new();
 
         public string CurrentPrefix => _currentPrefix;
         public bool IsLoading => _isLoading;
@@ -35,16 +35,16 @@ namespace IconBrowser.UI
         public IReadOnlyDictionary<string, List<IconEntry>> VariantMap => _variantMap;
 
         /// <summary>Fired when the filtered/grouped entries change.</summary>
-        public event Action OnEntriesChanged;
+        public event Action OnEntriesChanged = delegate { };
 
         /// <summary>Fired when categories are available for the current prefix.</summary>
-        public event Action<List<string>> OnCategoriesLoaded;
+        public event Action<List<string>> OnCategoriesLoaded = delegate { };
 
         /// <summary>Fired when a pending search drains.</summary>
-        public event Action<string> OnPendingSearchDrained;
+        public event Action<string> OnPendingSearchDrained = delegate { };
 
         /// <summary>Fired when loading state changes.</summary>
-        public event Action<bool> OnLoadingChanged;
+        public event Action<bool> OnLoadingChanged = delegate { };
 
         public BrowseDataController(IconDatabase db)
         {
@@ -220,7 +220,7 @@ namespace IconBrowser.UI
                 entry.IsImported = _db.IsImported(entry.Name);
         }
 
-        void DrainPendingSearch()
+        private void DrainPendingSearch()
         {
             if (_pendingSearchQuery == null) return;
             var query = _pendingSearchQuery;

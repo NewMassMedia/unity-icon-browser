@@ -13,21 +13,21 @@ namespace IconBrowser.Import
     public class IconAtlas
     {
         public const int ICON_SIZE = IconBrowserConstants.ICON_SIZE;
-        const int ATLAS_SIZE = IconBrowserConstants.ATLAS_SIZE;
-        const int ICONS_PER_ROW = ATLAS_SIZE / ICON_SIZE; // 42
-        const int MAX_ICONS = ICONS_PER_ROW * ICONS_PER_ROW; // 1764
+        private const int ATLAS_SIZE = IconBrowserConstants.ATLAS_SIZE;
+        private const int ICONS_PER_ROW = ATLAS_SIZE / ICON_SIZE; // 42
+        private const int MAX_ICONS = ICONS_PER_ROW * ICONS_PER_ROW; // 1764
 
-        readonly string _prefix;
-        Texture2D _atlas;
-        readonly Dictionary<string, int> _index = new();
-        readonly Dictionary<string, Sprite> _spriteCache = new();
-        int _nextSlot;
-        bool _dirty;
+        private readonly string _prefix;
+        private Texture2D _atlas;
+        private readonly Dictionary<string, int> _index = new();
+        private readonly Dictionary<string, Sprite> _spriteCache = new();
+        private int _nextSlot;
+        private bool _isDirty;
 
         public int Count => _index.Count;
         public bool HasIcon(string name) => _index.ContainsKey(name);
 
-        IconAtlas(string prefix)
+        private IconAtlas(string prefix)
         {
             _prefix = prefix;
         }
@@ -132,7 +132,7 @@ namespace IconBrowser.Import
 
             _index[name] = _nextSlot;
             _nextSlot++;
-            _dirty = true;
+            _isDirty = true;
             return true;
         }
 
@@ -141,14 +141,14 @@ namespace IconBrowser.Import
         /// </summary>
         public void Save()
         {
-            if (!_dirty) return;
+            if (!_isDirty) return;
 
             _atlas.Apply();
             EnsureAppDataDir();
 
             File.WriteAllBytes(GetAtlasPath(_prefix), _atlas.EncodeToPNG());
             File.WriteAllText(GetIndexPath(_prefix), SerializeIndex());
-            _dirty = false;
+            _isDirty = false;
         }
 
         public void Destroy()
@@ -175,12 +175,12 @@ namespace IconBrowser.Import
             }
         }
 
-        static string AppDataDir => CacheDir;
+        private static string AppDataDir => CacheDir;
 
-        static string GetAtlasPath(string prefix) => Path.Combine(AppDataDir, $"{prefix}_atlas.png");
-        static string GetIndexPath(string prefix) => Path.Combine(AppDataDir, $"{prefix}_atlas.json");
+        private static string GetAtlasPath(string prefix) => Path.Combine(AppDataDir, $"{prefix}_atlas.png");
+        private static string GetIndexPath(string prefix) => Path.Combine(AppDataDir, $"{prefix}_atlas.json");
 
-        static void EnsureAppDataDir()
+        private static void EnsureAppDataDir()
         {
             if (!Directory.Exists(AppDataDir))
                 Directory.CreateDirectory(AppDataDir);
@@ -195,11 +195,11 @@ namespace IconBrowser.Import
                 Directory.Delete(AppDataDir, true);
         }
 
-        #endregion
+        #endregion Paths
 
         #region Pixel Operations
 
-        static Color[] GetResizedPixels(Texture2D source, int targetW, int targetH)
+        private static Color[] GetResizedPixels(Texture2D source, int targetW, int targetH)
         {
             var rt = RenderTexture.GetTemporary(targetW, targetH, 0, RenderTextureFormat.ARGB32);
             var prev = RenderTexture.active;
@@ -252,11 +252,11 @@ namespace IconBrowser.Import
             }
         }
 
-        #endregion
+        #endregion Pixel Operations
 
         #region Index Serialization
 
-        string SerializeIndex()
+        private string SerializeIndex()
         {
             var sb = new System.Text.StringBuilder();
             sb.Append('{');
@@ -271,7 +271,7 @@ namespace IconBrowser.Import
             return sb.ToString();
         }
 
-        void DeserializeIndex(string json)
+        private void DeserializeIndex(string json)
         {
             _index.Clear();
             var obj = Data.SimpleJsonParser.ParseJsonObject(json);
@@ -282,6 +282,6 @@ namespace IconBrowser.Import
             }
         }
 
-        #endregion
+        #endregion Index Serialization
     }
 }

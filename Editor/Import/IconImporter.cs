@@ -10,14 +10,25 @@ namespace IconBrowser.Import
     /// <summary>
     /// Handles downloading SVG from Iconify, converting for Unity, and importing with correct settings.
     /// Implements IIconImporter for dependency injection.
-    /// Static convenience methods delegate to <see cref="Default"/>.
+    /// Use <see cref="Default"/> for the shared singleton instance.
     /// </summary>
     public class IconImporter : IIconImporter
     {
-        static readonly Regex ClassAttributeRegex = new(@"\s+class=""[^""]*""", RegexOptions.Compiled);
+        private static readonly Regex CLASS_ATTRIBUTE_REGEX = new(@"\s+class=""[^""]*""", RegexOptions.Compiled);
 
-        static readonly string META_TEMPLATE = @"fileFormatVersion: 2
-guid: {0}
+        /// <summary>
+        /// Generates a Unity .meta file for SVG import with configurable parameters.
+        /// </summary>
+        /// <param name="guid">The GUID for the asset (32-char hex, no dashes).</param>
+        /// <param name="svgType">SVG import type: 1 = TexturedSprite, 3 = VectorSprite.</param>
+        /// <param name="textureSize">Texture resolution (e.g. 64 for previews, 256 for imports).</param>
+        /// <param name="predefinedResolutionIndex">Predefined resolution index (0 or 1).</param>
+        /// <param name="targetResolution">Target resolution for vector rendering.</param>
+        public static string GenerateMeta(string guid, int svgType = 3, int textureSize = 256,
+            int predefinedResolutionIndex = 1, int targetResolution = 1080)
+        {
+            return $@"fileFormatVersion: 2
+guid: {guid}
 ScriptedImporter:
   internalIDToNameTable: []
   externalObjects: {{}}
@@ -26,7 +37,7 @@ ScriptedImporter:
   assetBundleName:
   assetBundleVariant:
   script: {{fileID: 12408, guid: 0000000000000000e000000000000000, type: 0}}
-  svgType: 3
+  svgType: {svgType}
   texturedSpriteMeshType: 0
   svgPixelsPerUnit: 100
   gradientResolution: 64
@@ -37,8 +48,8 @@ ScriptedImporter:
   preserveViewport: 0
   advancedMode: 0
   tessellationMode: 0
-  predefinedResolutionIndex: 1
-  targetResolution: 1080
+  predefinedResolutionIndex: {predefinedResolutionIndex}
+  targetResolution: {targetResolution}
   resolutionMultiplier: 1
   stepDistance: 10
   samplingStepDistance: 100
@@ -47,9 +58,9 @@ ScriptedImporter:
   maxTangentAngleEnabled: 0
   maxTangentAngle: 5
   keepTextureAspectRatio: 1
-  textureSize: 256
-  textureWidth: 256
-  textureHeight: 256
+  textureSize: {textureSize}
+  textureWidth: {textureSize}
+  textureHeight: {textureSize}
   wrapMode: 0
   filterMode: 1
   sampleCount: 4
@@ -70,9 +81,10 @@ ScriptedImporter:
     SpriteID:
     PhysicsOutlines: []
 ";
+        }
 
-        readonly IIconifyClient _client;
-        readonly IIconManifest _manifest;
+        private readonly IIconifyClient _client;
+        private readonly IIconManifest _manifest;
 
         /// <summary>
         /// Shared default instance for backward compatibility.
@@ -108,7 +120,7 @@ ScriptedImporter:
             {
                 var guid = System.Guid.NewGuid().ToString("N");
                 File.WriteAllText(fullPath, converted);
-                File.WriteAllText(metaPath, string.Format(META_TEMPLATE, guid));
+                File.WriteAllText(metaPath, GenerateMeta(guid));
 
                 AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
                 ApplyImportSettings(assetPath);
@@ -127,15 +139,25 @@ ScriptedImporter:
         }
 
         /// <summary>
+        /// Replaces currentColor attribute values with a concrete color for Unity SVG compatibility.
+        /// Handles stroke="currentColor" and fill="currentColor" patterns.
+        /// </summary>
+        public static string NormalizeSvgColors(string svgBody, string replacementColor = "#FFFFFF")
+        {
+            svgBody = svgBody.Replace($"stroke=\"currentColor\"", $"stroke=\"{replacementColor}\"");
+            svgBody = svgBody.Replace($"fill=\"currentColor\"", $"fill=\"{replacementColor}\"");
+            return svgBody;
+        }
+
+        /// <summary>
         /// Converts SVG content for Unity compatibility.
         /// </summary>
         public string ConvertForUnity(string svg)
         {
-            svg = svg.Replace("stroke=\"currentColor\"", "stroke=\"#FFFFFF\"");
-            svg = svg.Replace("fill=\"currentColor\"", "fill=\"#FFFFFF\"");
+            svg = NormalizeSvgColors(svg);
             svg = svg.Replace("width=\"1em\"", "width=\"24\"");
             svg = svg.Replace("height=\"1em\"", "height=\"24\"");
-            svg = ClassAttributeRegex.Replace(svg, "");
+            svg = CLASS_ATTRIBUTE_REGEX.Replace(svg, "");
             return svg;
         }
 
@@ -157,25 +179,9 @@ ScriptedImporter:
             return AssetDatabase.DeleteAsset(assetPath);
         }
 
-        #endregion
+        #endregion IIconImporter (instance methods)
 
-        #region Static convenience methods (backward compatibility)
-
-        public static Task<bool> ImportIconStaticAsync(string prefix, string name)
-            => Default.ImportIconAsync(prefix, name);
-
-        public static string ConvertForUnityStatic(string svg)
-            => Default.ConvertForUnity(svg);
-
-        public static bool DeleteIconStatic(string name, string prefix)
-            => Default.DeleteIcon(name, prefix);
-
-        public static bool DeleteIconByPathStatic(string assetPath)
-            => Default.DeleteIconByPath(assetPath);
-
-        #endregion
-
-        static void ApplyImportSettings(string assetPath)
+        private static void ApplyImportSettings(string assetPath)
         {
             var importer = AssetImporter.GetAtPath(assetPath);
             if (importer == null) return;
@@ -193,7 +199,7 @@ ScriptedImporter:
             }
         }
 
-        static void SetPropertyInt(SerializedObject so, string propName, int value)
+        private static void SetPropertyInt(SerializedObject so, string propName, int value)
         {
             var prop = so.FindProperty(propName);
             if (prop != null)

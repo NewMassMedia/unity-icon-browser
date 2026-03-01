@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using IconBrowser.Data;
-using IconBrowser.Import;
-using IconBrowser.UI;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
+using IconBrowser.Data;
+using IconBrowser.Import;
+using IconBrowser.UI;
 
 namespace IconBrowser
 {
@@ -25,27 +25,25 @@ namespace IconBrowser
             window.Show();
         }
 
-        IconDatabase _db;
-        SvgPreviewCache _previewCache;
+        private IconDatabase _db;
+        private SvgPreviewCache _previewCache;
 
-        ToolbarSearchField _searchField;
-        VisualElement _tabBar;
-        Button _projectTabBtn;
-        Button _browseTabBtn;
-        Button _settingsTabBtn;
-        Label _statusLabel;
+        private ToolbarSearchField _searchField;
+        private VisualElement _tabBar;
+        private Button _projectTabBtn;
+        private Button _browseTabBtn;
+        private Button _settingsTabBtn;
+        private Label _statusLabel;
 
-        ProjectTab _projectTab;
-        BrowseTab _browseTab;
-        VisualElement _settingsTab;
-        ToastNotification _toast;
+        private ProjectTab _projectTab;
+        private BrowseTab _browseTab;
+        private SettingsTab _settingsTab;
+        private ToastNotification _toast;
 
-        TextField _pathField;
+        private int _activeTab; // 0 = Project, 1 = Browse, 2 = Settings
+        private List<IconLibrary> _sortedLibraries = new();
 
-        int _activeTab; // 0 = Project, 1 = Browse, 2 = Settings
-        List<IconLibrary> _sortedLibraries = new();
-
-        void CreateGUI()
+        private void CreateGUI()
         {
             _db = new IconDatabase();
             _previewCache = new SvgPreviewCache();
@@ -69,7 +67,7 @@ namespace IconBrowser
             LoadLibrariesAsync();
         }
 
-        void BuildTabs()
+        private void BuildTabs()
         {
             // Tab bar — tabs on left, search on right
             _tabBar = new VisualElement();
@@ -112,168 +110,20 @@ namespace IconBrowser
             _browseTab = new BrowseTab(_db, _previewCache);
             _browseTab.style.display = DisplayStyle.None;
             _browseTab.SetToast(_toast);
-            _browseTab.OnIconImported += () =>
-            {
-                _projectTab.Initialize();
-                UpdateStatusBar();
-            };
+            _browseTab.OnIconImported -= OnIconImported;
+            _browseTab.OnIconImported += OnIconImported;
             tabContent.Add(_browseTab);
 
-            _settingsTab = BuildSettingsTab();
+            _settingsTab = new SettingsTab(_previewCache);
             _settingsTab.style.display = DisplayStyle.None;
+            _settingsTab.OnImportPathChanged -= OnImportPathChanged;
+            _settingsTab.OnImportPathChanged += OnImportPathChanged;
             tabContent.Add(_settingsTab);
 
             UpdateProjectTabLabel();
         }
 
-        VisualElement BuildSettingsTab()
-        {
-            var root = new ScrollView(ScrollViewMode.Vertical);
-            root.AddToClassList("settings-tab");
-
-            // --- Path Settings ---
-            var pathSection = new VisualElement();
-            pathSection.AddToClassList("settings-tab__section");
-            root.Add(pathSection);
-
-            var pathTitle = new Label("Path Settings");
-            pathTitle.AddToClassList("settings-tab__section-title");
-            pathSection.Add(pathTitle);
-
-            var pathRow = new VisualElement();
-            pathRow.AddToClassList("settings-tab__row");
-            pathSection.Add(pathRow);
-
-            var pathLabel = new Label("Import Path");
-            pathLabel.AddToClassList("settings-tab__label");
-            pathRow.Add(pathLabel);
-
-            _pathField = new TextField();
-            _pathField.value = IconBrowserSettings.IconsPath;
-            _pathField.isReadOnly = true;
-            _pathField.AddToClassList("settings-tab__path-field");
-            pathRow.Add(_pathField);
-
-            var changeBtn = new Button(() => ChangeImportPath()) { text = "Change..." };
-            changeBtn.AddToClassList("settings-tab__change-btn");
-            pathRow.Add(changeBtn);
-
-            // --- Import Settings ---
-            var importSection = new VisualElement();
-            importSection.AddToClassList("settings-tab__section");
-            root.Add(importSection);
-
-            var importTitle = new Label("Import Settings");
-            importTitle.AddToClassList("settings-tab__section-title");
-            importSection.Add(importTitle);
-
-            // Filter Mode
-            var filterRow = new VisualElement();
-            filterRow.AddToClassList("settings-tab__row");
-            importSection.Add(filterRow);
-
-            var filterLabel = new Label("Filter Mode");
-            filterLabel.AddToClassList("settings-tab__label");
-            filterRow.Add(filterLabel);
-
-            var filterChoices = new List<string> { "Point", "Bilinear", "Trilinear" };
-            var filterField = new PopupField<string>(filterChoices, IconBrowserSettings.FilterMode);
-            filterField.RegisterValueChangedCallback(evt =>
-            {
-                IconBrowserSettings.FilterMode = filterChoices.IndexOf(evt.newValue);
-            });
-            filterRow.Add(filterField);
-
-            // Sample Count
-            var sampleRow = new VisualElement();
-            sampleRow.AddToClassList("settings-tab__row");
-            importSection.Add(sampleRow);
-
-            var sampleLabel = new Label("Sample Count");
-            sampleLabel.AddToClassList("settings-tab__label");
-            sampleRow.Add(sampleLabel);
-
-            var sampleChoices = new List<string> { "1", "2", "4", "8" };
-            var sampleIndex = sampleChoices.IndexOf(IconBrowserSettings.SampleCount.ToString());
-            if (sampleIndex < 0) sampleIndex = 2; // default to "4"
-            var sampleField = new PopupField<string>(sampleChoices, sampleIndex);
-            sampleField.RegisterValueChangedCallback(evt =>
-            {
-                if (int.TryParse(evt.newValue, out var val))
-                    IconBrowserSettings.SampleCount = val;
-            });
-            sampleRow.Add(sampleField);
-
-            // --- Cache Settings ---
-            var cacheSection = new VisualElement();
-            cacheSection.AddToClassList("settings-tab__section");
-            root.Add(cacheSection);
-
-            var cacheTitle = new Label("Cache");
-            cacheTitle.AddToClassList("settings-tab__section-title");
-            cacheSection.Add(cacheTitle);
-
-            var cacheRow = new VisualElement();
-            cacheRow.AddToClassList("settings-tab__row");
-            cacheSection.Add(cacheRow);
-
-            var cacheLabel = new Label("Preview Atlas Cache");
-            cacheLabel.AddToClassList("settings-tab__label");
-            cacheRow.Add(cacheLabel);
-
-            var openCacheBtn = new Button(() =>
-            {
-                var dir = IconAtlas.CacheDir;
-                if (System.IO.Directory.Exists(dir))
-                    EditorUtility.RevealInFinder(dir);
-                else
-                    EditorUtility.DisplayDialog("Cache Empty", "No cache folder exists yet.", "OK");
-            }) { text = "Open Folder" };
-            openCacheBtn.AddToClassList("settings-tab__change-btn");
-            cacheRow.Add(openCacheBtn);
-
-            var clearCacheBtn = new Button(() =>
-            {
-                if (!EditorUtility.DisplayDialog("Clear Cache",
-                    "Delete all preview atlas cache files? Previews will be re-downloaded on next browse.",
-                    "Clear", "Cancel"))
-                    return;
-
-                _previewCache?.Destroy();
-                IconAtlas.ClearAllCaches();
-                Debug.Log("[IconBrowser] Preview cache cleared.");
-            }) { text = "Clear Cache" };
-            clearCacheBtn.AddToClassList("settings-tab__change-btn");
-            cacheRow.Add(clearCacheBtn);
-
-            return root;
-        }
-
-        void ChangeImportPath()
-        {
-            var currentPath = IconBrowserSettings.IconsPath;
-            var newPath = EditorUtility.OpenFolderPanel("Select Icons Import Folder", currentPath, "");
-            if (string.IsNullOrEmpty(newPath)) return;
-
-            // Convert absolute path to Assets-relative path
-            var dataPath = Application.dataPath;
-            if (newPath.StartsWith(dataPath))
-            {
-                newPath = "Assets" + newPath.Substring(dataPath.Length);
-                IconBrowserSettings.IconsPath = newPath;
-                _pathField.value = newPath;
-                _projectTab.Initialize();
-                UpdateStatusBar();
-                Debug.Log($"[IconBrowser] Import path set to: {newPath}");
-            }
-            else
-            {
-                EditorUtility.DisplayDialog("Invalid Path",
-                    "The selected folder must be inside the Assets directory.", "OK");
-            }
-        }
-
-        void BuildStatusBar()
+        private void BuildStatusBar()
         {
             _statusLabel = new Label();
             _statusLabel.AddToClassList("icon-browser__status");
@@ -281,7 +131,7 @@ namespace IconBrowser
             UpdateStatusBar();
         }
 
-        void SwitchTab(int tab)
+        private void SwitchTab(int tab)
         {
             _activeTab = tab;
 
@@ -302,12 +152,11 @@ namespace IconBrowser
             if (tab == 1)
             {
                 _browseTab.SyncImportState();
-                if (_browseTab.CurrentPrefix == "lucide")
-                    _browseTab.Initialize();
+                _browseTab.Initialize();
             }
         }
 
-        void OnSearchChanged(ChangeEvent<string> evt)
+        private void OnSearchChanged(ChangeEvent<string> evt)
         {
             if (_activeTab == 0)
                 _projectTab.Search(evt.newValue);
@@ -315,12 +164,12 @@ namespace IconBrowser
                 _browseTab.Search(evt.newValue);
         }
 
-        void LoadLibrariesAsync()
+        private void LoadLibrariesAsync()
         {
             AsyncHelper.FireAndForget(LoadLibrariesInternalAsync());
         }
 
-        async Task LoadLibrariesInternalAsync()
+        private async Task LoadLibrariesInternalAsync()
         {
             try
             {
@@ -341,12 +190,12 @@ namespace IconBrowser
             UpdateStatusBar();
         }
 
-        void UpdateProjectTabLabel()
+        private void UpdateProjectTabLabel()
         {
             _projectTabBtn.text = $"Project ({_db.LocalCount})";
         }
 
-        void UpdateStatusBar()
+        private void UpdateStatusBar()
         {
             UpdateProjectTabLabel();
 
@@ -362,7 +211,7 @@ namespace IconBrowser
             }
         }
 
-        static StyleSheet FindStyleSheet()
+        private static StyleSheet FindStyleSheet()
         {
             var guids = AssetDatabase.FindAssets("IconBrowserWindow t:StyleSheet");
             foreach (var guid in guids)
@@ -374,7 +223,19 @@ namespace IconBrowser
             return null;
         }
 
-        void OnDestroy()
+        private void OnIconImported()
+        {
+            _projectTab.Initialize();
+            UpdateStatusBar();
+        }
+
+        private void OnImportPathChanged()
+        {
+            _projectTab.Initialize();
+            UpdateStatusBar();
+        }
+
+        private void OnDestroy()
         {
             _projectTab?.Detach();
             _browseTab?.Detach();

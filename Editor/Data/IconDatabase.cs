@@ -14,14 +14,15 @@ namespace IconBrowser.Data
     /// </summary>
     public class IconDatabase
     {
-        readonly IIconifyClient _client;
-        readonly IIconManifest _manifest;
+        private readonly IIconifyClient _client;
+        private readonly IIconManifest _manifest;
 
-        readonly List<IconEntry> _localIcons = new();
-        readonly Dictionary<string, IconLibrary> _libraries = new();
-        readonly Dictionary<string, List<string>> _collectionCache = new();
-        readonly Dictionary<string, Dictionary<string, List<string>>> _categoryCache = new();
-        readonly Dictionary<string, string> _importedNames = new(); // name → prefix
+        private readonly List<IconEntry> _localIcons = new();
+        private readonly Dictionary<string, IconLibrary> _libraries = new();
+        private readonly Dictionary<string, List<string>> _collectionCache = new();
+        private readonly Dictionary<string, Dictionary<string, List<string>>> _categoryCache = new();
+        private readonly Dictionary<string, string> _importedNames = new(); // name → prefix
+        private bool _isBatchMode;
 
         public IReadOnlyList<IconEntry> LocalIcons => _localIcons;
         public IReadOnlyDictionary<string, IconLibrary> Libraries => _libraries;
@@ -29,7 +30,7 @@ namespace IconBrowser.Data
         public int LocalCount => _localIcons.Count;
         public bool LibrariesLoaded => _libraries.Count > 0;
 
-        public event Action OnLocalIconsChanged;
+        public event Action OnLocalIconsChanged = delegate { };
 
         /// <summary>
         /// Creates an IconDatabase with explicit dependencies.
@@ -60,7 +61,7 @@ namespace IconBrowser.Data
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (!path.EndsWith(".svg")) continue;
-                if (path.StartsWith("Assets/_IconBrowserTemp")) continue;
+                if (path.StartsWith(IconBrowserConstants.TEMP_ASSET_PATH)) continue;
 
                 var asset = AssetDatabase.LoadAssetAtPath<VectorImage>(path);
                 if (asset == null) continue;
@@ -97,8 +98,7 @@ namespace IconBrowser.Data
 
             if (!string.IsNullOrWhiteSpace(query))
             {
-                var q = query.ToLowerInvariant();
-                result = result.Where(e => e.Name.Contains(q));
+                result = result.Where(e => e.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
             }
 
             return result.ToList();
@@ -301,12 +301,27 @@ namespace IconBrowser.Data
         public bool IsImported(string name) => _importedNames.ContainsKey(name);
 
         /// <summary>
+        /// Suppresses ScanLocalIcons during batch operations.
+        /// Call <see cref="EndBatch"/> when done to trigger a single rescan.
+        /// </summary>
+        public void BeginBatch() => _isBatchMode = true;
+
+        /// <summary>
+        /// Ends batch mode and triggers a single ScanLocalIcons.
+        /// </summary>
+        public void EndBatch()
+        {
+            _isBatchMode = false;
+            ScanLocalIcons();
+        }
+
+        /// <summary>
         /// Marks an icon as imported and refreshes local cache.
         /// </summary>
         public void MarkImported(string name, string prefix)
         {
             _importedNames[name] = prefix;
-            ScanLocalIcons();
+            if (!_isBatchMode) ScanLocalIcons();
         }
 
         /// <summary>
@@ -323,7 +338,7 @@ namespace IconBrowser.Data
         public void MarkDeleted(string name)
         {
             _importedNames.Remove(name);
-            ScanLocalIcons();
+            if (!_isBatchMode) ScanLocalIcons();
         }
     }
 }

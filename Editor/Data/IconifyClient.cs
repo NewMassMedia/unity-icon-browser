@@ -4,18 +4,19 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
+using IconBrowser.Import;
 
 namespace IconBrowser.Data
 {
     /// <summary>
     /// HTTP client wrapper for the Iconify API.
     /// Implements IIconifyClient for dependency injection.
-    /// Static convenience methods delegate to <see cref="Default"/>.
+    /// Use <see cref="Default"/> for the shared singleton instance.
     /// </summary>
     public class IconifyClient : IIconifyClient
     {
-        const string BASE_URL = "https://api.iconify.design";
-        const int MAX_RETRIES = IconBrowserConstants.MAX_RETRIES;
+        private const string BASE_URL = "https://api.iconify.design";
+        private const int MAX_RETRIES = IconBrowserConstants.MAX_RETRIES;
 
         /// <summary>
         /// Shared default instance for backward compatibility.
@@ -59,30 +60,11 @@ namespace IconBrowser.Data
             return await FetchAsync($"{BASE_URL}/{prefix}/{name}.svg", ct);
         }
 
-        #endregion
-
-        #region Static convenience methods (backward compatibility)
-
-        public static Task<Dictionary<string, IconLibrary>> GetCollectionsStaticAsync()
-            => Default.GetCollectionsAsync();
-
-        public static Task<CollectionData> GetCollectionStaticAsync(string prefix)
-            => Default.GetCollectionAsync(prefix);
-
-        public static Task<SearchResult> SearchStaticAsync(string query, string prefix = "", int limit = 64)
-            => Default.SearchAsync(query, prefix, limit);
-
-        public static Task<Dictionary<string, string>> GetIconsBatchStaticAsync(string prefix, string[] names)
-            => Default.GetIconsBatchAsync(prefix, names);
-
-        public static Task<string> GetSvgStaticAsync(string prefix, string name)
-            => Default.GetSvgAsync(prefix, name);
-
-        #endregion
+        #endregion IIconifyClient (instance methods)
 
         #region HTTP
 
-        static async Task<string> FetchAsync(string url, CancellationToken ct = default)
+        private static async Task<string> FetchAsync(string url, CancellationToken ct = default)
         {
             Exception lastError = null;
             for (int attempt = 0; attempt <= MAX_RETRIES; attempt++)
@@ -93,7 +75,7 @@ namespace IconBrowser.Data
                 request.timeout = IconBrowserConstants.REQUEST_TIMEOUT_SECONDS;
                 var op = request.SendWebRequest();
                 var tcs = new TaskCompletionSource<bool>();
-                op.completed += _ => tcs.SetResult(true);
+                op.completed += _ => tcs.TrySetResult(true);
 
                 using (ct.Register(() => { request.Abort(); tcs.TrySetCanceled(); }))
                 {
@@ -101,7 +83,11 @@ namespace IconBrowser.Data
                 }
 
                 if (request.result == UnityWebRequest.Result.Success)
-                    return request.downloadHandler.text;
+                {
+                    var text = request.downloadHandler.text;
+                    request.Dispose();
+                    return text;
+                }
 
                 lastError = new Exception($"Iconify API error: {request.error} ({url})");
                 request.Dispose();
@@ -112,11 +98,11 @@ namespace IconBrowser.Data
             throw lastError;
         }
 
-        #endregion
+        #endregion HTTP
 
         #region API Response Parsing
 
-        static Dictionary<string, IconLibrary> ParseCollections(string json)
+        private static Dictionary<string, IconLibrary> ParseCollections(string json)
         {
             var result = new Dictionary<string, IconLibrary>();
             var obj = ParseJsonObject(json);
@@ -154,14 +140,19 @@ namespace IconBrowser.Data
             return result;
         }
 
-        static CollectionData ParseCollection(string json, string prefix)
+        private static CollectionData ParseCollection(string json, string prefix)
         {
             var data = new CollectionData { Prefix = prefix, IconNames = new List<string>() };
             var obj = ParseJsonObject(json);
+            var seen = new HashSet<string>();
 
             if (obj.TryGetValue("uncategorized", out var uncategorized))
             {
-                data.IconNames.AddRange(ParseJsonStringArray(uncategorized));
+                foreach (var n in ParseJsonStringArray(uncategorized))
+                {
+                    if (seen.Add(n))
+                        data.IconNames.Add(n);
+                }
             }
 
             if (obj.TryGetValue("categories", out var categories))
@@ -172,7 +163,7 @@ namespace IconBrowser.Data
                     var names = ParseJsonStringArray(kv.Value);
                     foreach (var n in names)
                     {
-                        if (!data.IconNames.Contains(n))
+                        if (seen.Add(n))
                             data.IconNames.Add(n);
                     }
                 }
@@ -191,7 +182,7 @@ namespace IconBrowser.Data
             return data;
         }
 
-        static SearchResult ParseSearchResult(string json)
+        private static SearchResult ParseSearchResult(string json)
         {
             var result = new SearchResult { Icons = new List<string>() };
             var obj = ParseJsonObject(json);
@@ -204,7 +195,7 @@ namespace IconBrowser.Data
             return result;
         }
 
-        static Dictionary<string, string> ParseIconsBatch(string json, string prefix)
+        private static Dictionary<string, string> ParseIconsBatch(string json, string prefix)
         {
             var result = new Dictionary<string, string>();
             var root = ParseJsonObject(json);
@@ -223,42 +214,40 @@ namespace IconBrowser.Data
 
                 var bodyStr = UnquoteJson(body);
                 bodyStr = bodyStr.Replace("\\\"", "\"").Replace("\\\\", "\\");
-                bodyStr = bodyStr.Replace("currentColor", "#FFFFFF");
+                bodyStr = IconImporter.NormalizeSvgColors(bodyStr);
 
                 int iw = width, ih = height;
                 if (iconObj.TryGetValue("width", out var iws) && int.TryParse(iws, out var iwv)) iw = iwv;
                 if (iconObj.TryGetValue("height", out var ihs) && int.TryParse(ihs, out var ihv)) ih = ihv;
 
-                var svg = $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{iw}\" height=\"{ih}\" " +
-                          $"viewBox=\"0 0 {iw} {ih}\">" +
-                          $"{bodyStr}</svg>";
+                var svg = $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{iw}\" height=\"{ih}\" viewBox=\"0 0 {iw} {ih}\">{bodyStr}</svg>";
                 result[kv.Key] = svg;
             }
             return result;
         }
 
-        #endregion
+        #endregion API Response Parsing
 
         #region JSON Delegation
 
-        static Dictionary<string, string> ParseJsonObject(string json) => SimpleJsonParser.ParseJsonObject(json);
-        static List<string> ParseJsonStringArray(string json) => SimpleJsonParser.ParseJsonStringArray(json);
-        static string UnquoteJson(string s) => SimpleJsonParser.UnquoteJson(s);
+        private static Dictionary<string, string> ParseJsonObject(string json) => SimpleJsonParser.ParseJsonObject(json);
+        private static List<string> ParseJsonStringArray(string json) => SimpleJsonParser.ParseJsonStringArray(json);
+        private static string UnquoteJson(string s) => SimpleJsonParser.UnquoteJson(s);
 
-        #endregion
+        #endregion JSON Delegation
     }
 
     public class CollectionData
     {
-        public string Prefix;
-        public List<string> IconNames;
-        public Dictionary<string, List<string>> Categories;
-        public int Total;
+        public string Prefix { get; set; }
+        public List<string> IconNames { get; set; }
+        public Dictionary<string, List<string>> Categories { get; set; }
+        public int Total { get; set; }
     }
 
     public class SearchResult
     {
-        public List<string> Icons;
-        public int Total;
+        public List<string> Icons { get; set; }
+        public int Total { get; set; }
     }
 }

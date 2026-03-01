@@ -1,0 +1,35 @@
+# Unity Guide — 검증 완료 파일 목록
+# 이 파일에 기록된 .cs 파일은 다음 실행 시 스킵됩니다.
+# 파일이 수정되면 자동으로 목록에서 제거되어 재검증 대상이 됩니다.
+# 수동으로 편집하여 파일을 추가/제거할 수 있습니다.
+
+Editor/AsyncHelper.cs
+Editor/IconBrowserConstants.cs
+Editor/IconBrowserSettings.cs
+Editor/IconBrowserWindow.cs
+Editor/IconOperationService.cs
+Editor/Data/IconLibrary.cs
+Editor/Data/IconEntry.cs
+Editor/Data/SimpleJsonParser.cs
+Editor/Data/IIconifyClient.cs
+Editor/Data/IIconManifest.cs
+Editor/Data/IconDatabase.cs
+Editor/Data/IconManifest.cs
+Editor/Data/IconifyClient.cs
+Editor/Import/IIconImporter.cs
+Editor/Import/IconAtlas.cs
+Editor/Import/SvgPreviewCache.cs
+Editor/Import/IconImporter.cs
+Editor/UI/ToastNotification.cs
+Editor/UI/BrowseDataController.cs
+Editor/UI/LibraryListView.cs
+Editor/UI/SettingsTab.cs
+Editor/UI/ProjectTab.cs
+Editor/UI/DragSelectionHandler.cs
+Editor/UI/BrowseTab.cs
+Editor/UI/BrowseTab.Actions.cs
+Editor/UI/IconDetailPanel.cs
+Editor/UI/IconGrid.cs
+Editor/UI/IconGrid.Layout.cs
+Editor/UI/IconGrid.Cells.cs
+Editor/UI/EditorProgressHelper.cs

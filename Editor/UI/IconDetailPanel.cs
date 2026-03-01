@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using IconBrowser.Data;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using IconBrowser.Data;
 
 namespace IconBrowser.UI
 {
@@ -13,38 +13,39 @@ namespace IconBrowser.UI
     /// </summary>
     public class IconDetailPanel : VisualElement
     {
-        readonly VisualElement _previewIcon;
-        readonly Label _nameLabel;
-        readonly Label _libraryLabel;
-        readonly Label _tagsLabel;
-        readonly Label _categoriesLabel;
-        readonly VisualElement _variantContainer;
-        readonly Label _variantHeader;
-        readonly VisualElement _variantStrip;
-        readonly Label _codeLabel;
-        readonly Button _copyBtn;
-        readonly Button _importBtn;
-        readonly Button _deleteBtn;
-        readonly VisualElement _content;
-        readonly Label _placeholder;
+        private readonly VisualElement _previewIcon;
+        private readonly Label _nameLabel;
+        private readonly Label _libraryLabel;
+        private readonly Label _tagsLabel;
+        private readonly Label _categoriesLabel;
+        private readonly VisualElement _variantContainer;
+        private readonly Label _variantHeader;
+        private readonly VisualElement _variantStrip;
+        private readonly Label _codeLabel;
+        private readonly Button _copyBtn;
+        private readonly Button _importBtn;
+        private readonly Button _deleteBtn;
+        private readonly VisualElement _content;
+        private readonly Label _placeholder;
 
         // Multi-selection UI
-        readonly VisualElement _multiContent;
-        readonly Label _multiCountLabel;
-        readonly Button _multiBatchBtn;
-        List<IconEntry> _currentMultiSelection;
+        private readonly VisualElement _multiContent;
+        private readonly Label _multiCountLabel;
+        private readonly Button _multiBatchBtn;
+        private bool _multiBatchIsDelete;
+        private List<IconEntry> _currentMultiSelection;
 
-        IconEntry _currentEntry;
-        List<IconEntry> _currentVariants;
-        bool _browseMode;
+        private IconEntry _currentEntry;
+        private List<IconEntry> _currentVariants;
+        private bool _isBrowseMode;
 
         public IconEntry CurrentEntry => _currentEntry;
 
-        public event Action<IconEntry> OnImportClicked;
-        public event Action<IconEntry> OnDeleteClicked;
-        public event Action<IconEntry> OnVariantSelected;
-        public event Action<List<IconEntry>> OnBatchImportClicked;
-        public event Action<List<IconEntry>> OnBatchDeleteClicked;
+        public event Action<IconEntry> OnImportClicked = delegate { };
+        public event Action<IconEntry> OnDeleteClicked = delegate { };
+        public event Action<IconEntry> OnVariantSelected = delegate { };
+        public event Action<List<IconEntry>> OnBatchImportClicked = delegate { };
+        public event Action<List<IconEntry>> OnBatchDeleteClicked = delegate { };
 
         public IconDetailPanel()
         {
@@ -74,8 +75,7 @@ namespace IconBrowser.UI
             {
                 if (_currentMultiSelection == null || _currentMultiSelection.Count == 0) return;
 
-                // Determine action based on button state
-                if (_multiBatchBtn.ClassListContains("icon-detail__btn--delete"))
+                if (_multiBatchIsDelete)
                     OnBatchDeleteClicked?.Invoke(_currentMultiSelection);
                 else
                     OnBatchImportClicked?.Invoke(_currentMultiSelection);
@@ -155,7 +155,7 @@ namespace IconBrowser.UI
         {
             _currentEntry = entry;
             _currentVariants = variants;
-            _browseMode = browseMode;
+            _isBrowseMode = browseMode;
             _multiContent.style.display = DisplayStyle.None;
 
             if (entry == null)
@@ -168,14 +168,18 @@ namespace IconBrowser.UI
             _content.style.display = DisplayStyle.Flex;
             _placeholder.style.display = DisplayStyle.None;
 
-            // Preview
-            if (entry.LocalAsset != null)
-                _previewIcon.style.backgroundImage = new StyleBackground(Background.FromVectorImage(entry.LocalAsset));
-            else if (entry.PreviewSprite != null)
-                _previewIcon.style.backgroundImage = new StyleBackground(Background.FromSprite(entry.PreviewSprite));
-            else
-                _previewIcon.style.backgroundImage = StyleKeyword.None;
+            UpdatePreview(entry);
+            UpdateMetadata(entry, variants);
+            UpdateButtons(entry);
+        }
 
+        private void UpdatePreview(IconEntry entry)
+        {
+            _previewIcon.style.backgroundImage = IconGrid.GetIconBackground(entry);
+        }
+
+        private void UpdateMetadata(IconEntry entry, List<IconEntry> variants)
+        {
             // Name
             _nameLabel.text = entry.Name;
 
@@ -193,7 +197,7 @@ namespace IconBrowser.UI
             // Tags
             if (entry.Tags != null && entry.Tags.Length > 0)
             {
-                _tagsLabel.text = "Tags: " + string.Join(", ", entry.Tags);
+                _tagsLabel.text = $"Tags: {string.Join(", ", entry.Tags)}";
                 _tagsLabel.style.display = DisplayStyle.Flex;
             }
             else
@@ -223,9 +227,12 @@ namespace IconBrowser.UI
             {
                 _variantContainer.style.display = DisplayStyle.None;
             }
+        }
 
-            // Code & Copy — hidden in browse mode
-            var showCode = !_browseMode && entry.IsImported;
+        private void UpdateButtons(IconEntry entry)
+        {
+            // Code & Copy -- hidden in browse mode
+            var showCode = !_isBrowseMode && entry.IsImported;
             _codeLabel.text = entry.LoadSnippet;
             _codeLabel.style.display = showCode ? DisplayStyle.Flex : DisplayStyle.None;
             _copyBtn.style.display = showCode ? DisplayStyle.Flex : DisplayStyle.None;
@@ -254,6 +261,7 @@ namespace IconBrowser.UI
             if (importedCount == entries.Count)
             {
                 // All imported — show Delete button
+                _multiBatchIsDelete = true;
                 _multiBatchBtn.text = $"Delete {entries.Count} Icons";
                 _multiBatchBtn.EnableInClassList("icon-detail__btn--delete", true);
                 _multiBatchBtn.EnableInClassList("icon-detail__btn--import", false);
@@ -261,6 +269,7 @@ namespace IconBrowser.UI
             else if (notImportedCount == entries.Count)
             {
                 // None imported — show Import button
+                _multiBatchIsDelete = false;
                 _multiBatchBtn.text = $"Import {entries.Count} Icons";
                 _multiBatchBtn.EnableInClassList("icon-detail__btn--import", true);
                 _multiBatchBtn.EnableInClassList("icon-detail__btn--delete", false);
@@ -268,13 +277,14 @@ namespace IconBrowser.UI
             else
             {
                 // Mixed — show Import for non-imported only
+                _multiBatchIsDelete = false;
                 _multiBatchBtn.text = $"Import {notImportedCount} Icons";
                 _multiBatchBtn.EnableInClassList("icon-detail__btn--import", true);
                 _multiBatchBtn.EnableInClassList("icon-detail__btn--delete", false);
             }
         }
 
-        void BuildVariantStrip(IconEntry selected, List<IconEntry> variants)
+        private void BuildVariantStrip(IconEntry selected, List<IconEntry> variants)
         {
             _variantStrip.Clear();
             foreach (var variant in variants)
@@ -286,10 +296,7 @@ namespace IconBrowser.UI
 
                 var icon = new VisualElement();
                 icon.AddToClassList("icon-detail__variant-icon");
-                if (variant.LocalAsset != null)
-                    icon.style.backgroundImage = new StyleBackground(Background.FromVectorImage(variant.LocalAsset));
-                else if (variant.PreviewSprite != null)
-                    icon.style.backgroundImage = new StyleBackground(Background.FromSprite(variant.PreviewSprite));
+                icon.style.backgroundImage = IconGrid.GetIconBackground(variant);
                 btn.Add(icon);
 
                 var label = new Label(string.IsNullOrEmpty(variant.VariantLabel) ? "default" : variant.VariantLabel);
@@ -308,6 +315,31 @@ namespace IconBrowser.UI
         }
 
         /// <summary>
+        /// Handles grid selection changes with the standard 0/1/N branching pattern.
+        /// When a single icon is selected and <paramref name="onSingleSelected"/> is provided,
+        /// it is invoked instead of the default ShowEntry call, allowing callers to inject
+        /// custom logic (e.g. variant lookup, preview preloading).
+        /// </summary>
+        public void HandleSelectionChanged(List<IconEntry> selection, Action<IconEntry> onSingleSelected = null)
+        {
+            if (selection.Count == 0)
+            {
+                Clear();
+            }
+            else if (selection.Count == 1)
+            {
+                if (onSingleSelected != null)
+                    onSingleSelected(selection[0]);
+                else
+                    ShowEntry(selection[0]);
+            }
+            else
+            {
+                ShowMultiSelection(selection);
+            }
+        }
+
+        /// <summary>
         /// Clears the panel to placeholder state.
         /// </summary>
         public new void Clear()
@@ -316,20 +348,20 @@ namespace IconBrowser.UI
             ShowEntry(null);
         }
 
-        void OnCopy()
+        private void OnCopy()
         {
             if (_currentEntry == null) return;
             EditorGUIUtility.systemCopyBuffer = _currentEntry.LoadSnippet;
             Debug.Log($"[IconBrowser] Copied: {_currentEntry.LoadSnippet}");
         }
 
-        void OnImport()
+        private void OnImport()
         {
             if (_currentEntry == null) return;
             OnImportClicked?.Invoke(_currentEntry);
         }
 
-        void OnDelete()
+        private void OnDelete()
         {
             if (_currentEntry == null) return;
 

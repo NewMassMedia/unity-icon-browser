@@ -9,10 +9,10 @@ namespace IconBrowser.UI
     /// </summary>
     internal class ToastNotification : VisualElement
     {
-        const float DISPLAY_DURATION_MS = 4000;
-        const float FADE_DURATION_MS = 300;
+        private const float DISPLAY_DURATION_MS = 4000;
+        private const float FADE_DURATION_MS = 300;
 
-        readonly Label _label;
+        private readonly Label _label;
         IVisualElementScheduledItem _hideHandle;
 
         public ToastNotification()
@@ -67,7 +67,7 @@ namespace IconBrowser.UI
             Show(message, new Color(0.8f, 0.6f, 0.1f, 0.9f));
         }
 
-        void Show(string message, Color bgColor)
+        private void Show(string message, Color bgColor)
         {
             _hideHandle?.Pause();
 

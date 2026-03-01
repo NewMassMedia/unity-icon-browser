@@ -8,19 +8,19 @@ namespace IconBrowser.Data
     /// Tracks which library each imported icon came from.
     /// Stored as a JSON file alongside the icons folder.
     /// Implements IIconManifest for dependency injection.
-    /// Static convenience methods delegate to <see cref="Default"/>.
+    /// Use <see cref="Default"/> for the shared singleton instance.
     /// </summary>
-    class IconManifest : IIconManifest
+    internal class IconManifest : IIconManifest
     {
-        Dictionary<string, string> _data;
-        string _loadedPath;
+        private Dictionary<string, string> _data;
+        private string _loadedPath;
 
         /// <summary>
         /// Shared default instance for backward compatibility.
         /// </summary>
         public static readonly IconManifest Default = new();
 
-        string ManifestPath
+        private string ManifestPath
         {
             get
             {
@@ -104,22 +104,9 @@ namespace IconBrowser.Data
             _loadedPath = null;
         }
 
-        #endregion
+        #endregion IIconManifest (instance methods)
 
-        #region Static convenience methods (backward compatibility)
-
-        public static string GetPrefixStatic(string name) => Default.GetPrefix(name);
-        public static void SetStatic(string name, string prefix) => Default.Set(name, prefix);
-        public static void RemoveStatic(string name) => Default.Remove(name);
-        public static IReadOnlyDictionary<string, string> GetAllStatic() => Default.GetAll();
-        public static HashSet<string> GetPrefixesStatic() => Default.GetPrefixes();
-        public static int ReassignUnknownsStatic(string newPrefix) => Default.ReassignUnknowns(newPrefix);
-        public static int AddMissingStatic(IEnumerable<string> names, string prefix) => Default.AddMissing(names, prefix);
-        public static void InvalidateStatic() => Default.Invalidate();
-
-        #endregion
-
-        void EnsureLoaded()
+        private void EnsureLoaded()
         {
             var path = ManifestPath;
             if (_data != null && _loadedPath == path) return;
@@ -133,7 +120,7 @@ namespace IconBrowser.Data
             ParseJson(json);
         }
 
-        void Save()
+        private void Save()
         {
             var path = ManifestPath;
             var dir = Path.GetDirectoryName(path);
@@ -143,7 +130,7 @@ namespace IconBrowser.Data
             File.WriteAllText(path, ToJson());
         }
 
-        string ToJson()
+        private string ToJson()
         {
             var sb = new StringBuilder();
             sb.AppendLine("{");
@@ -159,7 +146,7 @@ namespace IconBrowser.Data
             return sb.ToString();
         }
 
-        void ParseJson(string json)
+        private void ParseJson(string json)
         {
             var obj = SimpleJsonParser.ParseJsonObject(json);
             foreach (var kv in obj)

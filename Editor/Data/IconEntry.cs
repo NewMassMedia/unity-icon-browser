@@ -1,9 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEngine.UIElements;
-
-using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("IconBrowser.Editor.Tests")]
 
@@ -68,7 +67,7 @@ namespace IconBrowser.Data
         /// Per-library variant suffix definitions (longest-first within each list for correct parsing).
         /// Libraries not listed here have no variant grouping.
         /// </summary>
-        static readonly Dictionary<string, string[]> LIBRARY_SUFFIXES = new()
+        private static readonly Dictionary<string, string[]> LIBRARY_SUFFIXES = new()
         {
             // Phosphor — 6 weights (regular = no suffix)
             ["ph"] = new[] { "-duotone", "-light", "-bold", "-thin", "-fill" },
@@ -95,7 +94,7 @@ namespace IconBrowser.Data
         /// Display order for variant tabs (user-friendly ordering).
         /// Separate from LIBRARY_SUFFIXES which is ordered for parsing.
         /// </summary>
-        static readonly Dictionary<string, string[]> LIBRARY_DISPLAY_ORDER = new()
+        private static readonly Dictionary<string, string[]> LIBRARY_DISPLAY_ORDER = new()
         {
             ["ph"] = new[] { "-thin", "-light", "-bold", "-fill", "-duotone" },
             ["heroicons"] = new[] { "-solid", "-20-solid", "-16-solid" },
