@@ -593,6 +593,10 @@ namespace IconBrowser.UI
             {
                 entry.IsImported = false;
                 _db.MarkDeleted(entry.Name);
+
+                var (baseName, _) = VariantGrouper.ParseVariant(entry.Name, _dc.CurrentPrefix);
+                _dc.VariantMap.TryGetValue(baseName, out var variants);
+                _detail.ShowEntry(entry, variants, browseMode: true);
                 _grid.RefreshPreviews();
                 OnIconImported?.Invoke();
                 _toast?.ShowError($"Deleted {entry.Name}");
