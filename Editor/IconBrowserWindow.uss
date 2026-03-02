@@ -132,6 +132,7 @@
 .library-list {
     width: 180px;
     min-width: 140px;
+    height: 100%;
     border-right-width: 1px;
     border-right-color: rgb(50, 50, 50);
     background-color: rgb(33, 33, 33);
@@ -206,6 +207,36 @@
 .library-list__more-toggle:hover {
     background-color: rgba(255, 255, 255, 0.04);
     color: rgb(160, 160, 160);
+}
+
+.library-list__preview-tooltip {
+    width: 126px;
+    padding: 6px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgb(70, 70, 70);
+    background-color: rgb(28, 28, 28);
+}
+
+.library-list__preview-icons {
+    flex-direction: row;
+}
+
+.library-list__preview-icon {
+    width: 34px;
+    height: 34px;
+    margin-right: 4px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: rgb(70, 70, 70);
+    background-color: rgba(255, 255, 255, 0.03);
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: rgb(220, 220, 220);
+}
+
+.library-list__preview-icon--empty {
+    background-color: rgba(255, 255, 255, 0.02);
+    border-color: rgb(55, 55, 55);
 }
 
 /* ===== Icon Grid ===== */

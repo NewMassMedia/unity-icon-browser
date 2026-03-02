@@ -149,6 +149,8 @@ namespace IconBrowser
             // Clear search when switching tabs
             _searchField.value = "";
 
+            _browseTab.SetTabActive(tab == 1);
+
             if (tab == 1)
             {
                 _browseTab.SyncImportState();

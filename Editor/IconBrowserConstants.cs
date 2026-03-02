@@ -17,7 +17,7 @@ namespace IconBrowser
         // Atlas
         public const int ATLAS_SIZE = 2048;
         public const int MAX_BATCH_SIZE = 100;
-        public const int MAX_ATLAS_COUNT = 16; // ~64MB limit for LRU eviction
+        public const int MAX_ATLAS_COUNT = 24; // ~96MB limit for LRU eviction
 
         // Debounce timings (ms)
         public const int SEARCH_DEBOUNCE_MS = 300;

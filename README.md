@@ -22,6 +22,8 @@ Search, preview, and import **200,000+ open-source icons** from [Iconify](https:
 - **Project tab** for managing imported icons with library filter
 - **Focus imported icon** in Unity Project window from the detail panel (Project/Browse tabs)
 - **Atlas-based preview cache** for instant loading across sessions
+- **Library tooltip previews** (3 icon samples on sidebar hover)
+- **Adaptive background prefetch** (active-tab only, hover-priority warming)
 - **Prefix subfolder** storage to prevent name collisions between libraries
 - **`Resources.Load` ready** — imported icons are immediately usable in code
 
@@ -88,6 +90,10 @@ The resource path is shown in the detail panel when you select an imported icon.
 2. SVG is converted for Unity compatibility (`currentColor` replaced, dimensions normalized)
 3. Imported as `VectorImage` via Unity's SVG importer — fully resolution-independent
 4. Preview thumbnails are packed into sprite atlases cached in `LocalApplicationData/IconBrowser`
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Icon licenses
 

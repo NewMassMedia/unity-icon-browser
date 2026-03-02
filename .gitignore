@@ -9,3 +9,13 @@
 
 # Serena agent memories
 .serena/
+
+# Local agent-team docs (do not commit)
+AGENTS.md
+AGENTS.md.meta
+docs/icon-preview-rearchitecture-plan.md
+docs/icon-preview-rearchitecture-plan.md.meta
+docs/agent-team/
+docs/agent-team.meta
+docs/agent-team/*.meta
+docs.meta

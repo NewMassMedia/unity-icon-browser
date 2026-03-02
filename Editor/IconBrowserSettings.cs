@@ -21,6 +21,7 @@ namespace IconBrowser
 
         private const string PREF_FILTER_MODE = "IconBrowser_FilterMode";
         private const string PREF_SAMPLE_COUNT = "IconBrowser_SampleCount";
+        private const string PREF_VERBOSE_CACHE_LOGS = "IconBrowser_VerboseCacheLogs";
 
         /// <summary>
         /// Texture filter mode: 0 = Point, 1 = Bilinear, 2 = Trilinear.
@@ -38,6 +39,15 @@ namespace IconBrowser
         {
             get => EditorPrefs.GetInt(PREF_SAMPLE_COUNT, 4);
             set => EditorPrefs.SetInt(PREF_SAMPLE_COUNT, value);
+        }
+
+        /// <summary>
+        /// Enables verbose cache/eviction logs for diagnostics.
+        /// </summary>
+        public static bool VerboseCacheLogs
+        {
+            get => EditorPrefs.GetBool(PREF_VERBOSE_CACHE_LOGS, false);
+            set => EditorPrefs.SetBool(PREF_VERBOSE_CACHE_LOGS, value);
         }
     }
 }
