@@ -84,20 +84,18 @@ ScriptedImporter:
         }
 
         private readonly IIconifyClient _client;
-        private readonly IIconManifest _manifest;
 
         /// <summary>
         /// Shared default instance for backward compatibility.
         /// </summary>
-        public static readonly IconImporter Default = new(IconifyClient.Default, IconManifest.Default);
+        public static readonly IconImporter Default = new(IconifyClient.Default);
 
         /// <summary>
         /// Creates an IconImporter with explicit dependencies.
         /// </summary>
-        public IconImporter(IIconifyClient client, IIconManifest manifest)
+        public IconImporter(IIconifyClient client)
         {
             _client = client;
-            _manifest = manifest;
         }
 
         #region IIconImporter (instance methods)
@@ -125,7 +123,6 @@ ScriptedImporter:
                 AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
                 ApplyImportSettings(assetPath);
 
-                _manifest.Set(name, prefix);
                 Debug.Log($"[IconBrowser] Imported: {name} from {prefix}");
                 return true;
             }

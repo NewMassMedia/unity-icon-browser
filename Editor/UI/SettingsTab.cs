@@ -14,6 +14,7 @@ namespace IconBrowser.UI
     {
         private readonly SvgPreviewCache _previewCache;
         private readonly TextField _pathField;
+        private readonly HelpBox _resourcePathWarning;
 
         /// <summary>
         /// Fired when the import path is changed.
@@ -59,6 +60,12 @@ namespace IconBrowser.UI
             var changeBtn = new Button(ChangeImportPath) { text = "Change..." };
             changeBtn.AddToClassList("settings-tab__change-btn");
             pathRow.Add(changeBtn);
+
+            _resourcePathWarning = new HelpBox(
+                "Warning: The import path is not under a Resources folder. The Resources.Load snippet may not work at runtime.",
+                HelpBoxMessageType.Warning);
+            pathSection.Add(_resourcePathWarning);
+            UpdateResourcePathWarning(_pathField.value);
 
             // --- Import Settings ---
             var importSection = new VisualElement();
@@ -163,6 +170,7 @@ namespace IconBrowser.UI
                 newPath = "Assets" + newPath.Substring(dataPath.Length);
                 IconBrowserSettings.IconsPath = newPath;
                 _pathField.value = newPath;
+                UpdateResourcePathWarning(newPath);
                 Debug.Log($"[IconBrowser] Import path set to: {newPath}");
                 OnImportPathChanged?.Invoke();
             }
@@ -171,6 +179,13 @@ namespace IconBrowser.UI
                 EditorUtility.DisplayDialog("Invalid Path",
                     "The selected folder must be inside the Assets directory.", "OK");
             }
+        }
+
+        private void UpdateResourcePathWarning(string path)
+        {
+            var normalizedPath = (path ?? string.Empty).Replace("\\", "/");
+            var hasResourcesSegment = normalizedPath.Contains("/Resources/");
+            _resourcePathWarning.style.display = hasResourcesSegment ? DisplayStyle.None : DisplayStyle.Flex;
         }
     }
 }

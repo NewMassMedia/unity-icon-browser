@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using IconBrowser.Data;
@@ -54,12 +55,14 @@ namespace IconBrowser.UI
         /// <summary>
         /// Sets the current library prefix and loads its collection.
         /// </summary>
-        public async Task SetPrefixAndLoadAsync(string prefix)
+        public async Task SetPrefixAndLoadAsync(string prefix, CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             _currentPrefix = prefix;
             _selectedCategory = "";
             _selectedVariant = "";
-            await LoadCollectionAsync(prefix);
+            await LoadCollectionAsync(prefix, ct);
+            ct.ThrowIfCancellationRequested();
         }
 
         /// <summary>
@@ -83,8 +86,9 @@ namespace IconBrowser.UI
         /// <summary>
         /// Performs a remote search for the given query.
         /// </summary>
-        public async Task SearchAsync(string query)
+        public async Task SearchAsync(string query, CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             if (_isLoading)
             {
                 _pendingSearchQuery = query;
@@ -96,22 +100,28 @@ namespace IconBrowser.UI
 
             try
             {
+                ct.ThrowIfCancellationRequested();
                 _allEntries = await _db.SearchRemoteAsync(query, _currentPrefix);
+                ct.ThrowIfCancellationRequested();
                 ApplyFilters();
             }
             finally
             {
                 _isLoading = false;
                 OnLoadingChanged?.Invoke(false);
-                DrainPendingSearch();
+                if (ct.IsCancellationRequested)
+                    _pendingSearchQuery = null;
+                else
+                    DrainPendingSearch();
             }
         }
 
         /// <summary>
         /// Loads the full collection for the given prefix.
         /// </summary>
-        public async Task LoadCollectionAsync(string prefix)
+        public async Task LoadCollectionAsync(string prefix, CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             if (_isLoading) return;
             _isLoading = true;
             _pendingSearchQuery = null;
@@ -119,13 +129,19 @@ namespace IconBrowser.UI
 
             try
             {
+                ct.ThrowIfCancellationRequested();
                 var names = await _db.GetCollectionIconsAsync(prefix);
+                ct.ThrowIfCancellationRequested();
                 _allEntries = _db.CreateEntries(prefix, names);
 
                 var categories = _db.GetCategories(prefix);
                 OnCategoriesLoaded?.Invoke(categories);
 
                 ApplyFilters();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception e)
             {
@@ -135,7 +151,10 @@ namespace IconBrowser.UI
             {
                 _isLoading = false;
                 OnLoadingChanged?.Invoke(false);
-                DrainPendingSearch();
+                if (ct.IsCancellationRequested)
+                    _pendingSearchQuery = null;
+                else
+                    DrainPendingSearch();
             }
         }
 
@@ -217,7 +236,7 @@ namespace IconBrowser.UI
         public void SyncImportState()
         {
             foreach (var entry in _allEntries)
-                entry.IsImported = _db.IsImported(entry.Name);
+                entry.IsImported = _db.IsImported(entry.Name, entry.Prefix);
         }
 
         private void DrainPendingSearch()

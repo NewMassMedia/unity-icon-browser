@@ -208,9 +208,7 @@ namespace IconBrowser.UI
             if (prefix == _dc.CurrentPrefix && _isInitialized) return;
 
             // Cancel any in-flight async operations from the previous library
-            _cts.Cancel();
-            _cts.Dispose();
-            _cts = new CancellationTokenSource();
+            ResetRequestCts();
 
             _libraryList.HighlightLibrary(prefix);
             _detail.Clear();
@@ -220,7 +218,8 @@ namespace IconBrowser.UI
 
             UpdateLibraryInfo(prefix);
             RebuildVariantBar(prefix);
-            AsyncHelper.FireAndForget(_dc.SetPrefixAndLoadAsync(prefix));
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SetPrefixAndLoadAsync(prefix, ct)));
         }
 
         private void UpdateLibraryInfo(string prefix)
@@ -333,7 +332,8 @@ namespace IconBrowser.UI
             _isInitialized = true;
             UpdateLibraryInfo(_dc.CurrentPrefix);
             RebuildVariantBar(_dc.CurrentPrefix);
-            AsyncHelper.FireAndForget(_dc.SetPrefixAndLoadAsync(_dc.CurrentPrefix));
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SetPrefixAndLoadAsync(_dc.CurrentPrefix, ct)));
         }
 
         /// <summary>
@@ -341,13 +341,15 @@ namespace IconBrowser.UI
         /// </summary>
         public void SetLibrary(string prefix)
         {
+            ResetRequestCts();
             _searchQuery = "";
             _detail.Clear();
             _previewCache.ClearMemoryCache();
             _libraryList.HighlightLibrary(prefix);
             UpdateLibraryInfo(prefix);
             RebuildVariantBar(prefix);
-            AsyncHelper.FireAndForget(_dc.SetPrefixAndLoadAsync(prefix));
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SetPrefixAndLoadAsync(prefix, ct)));
         }
 
         /// <summary>
@@ -371,11 +373,15 @@ namespace IconBrowser.UI
             if (string.IsNullOrWhiteSpace(query))
             {
                 // Empty query — show full collection
-                AsyncHelper.FireAndForget(_dc.LoadCollectionAsync(_dc.CurrentPrefix));
+                var ct = _cts.Token;
+                AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.LoadCollectionAsync(_dc.CurrentPrefix, ct)));
                 return;
             }
 
-            _debounceHandle = schedule.Execute(() => AsyncHelper.FireAndForget(_dc.SearchAsync(query))).StartingIn(IconBrowserConstants.SEARCH_DEBOUNCE_MS);
+            var token = _cts.Token;
+            _debounceHandle = schedule.Execute(() =>
+                    AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SearchAsync(query, token))))
+                .StartingIn(IconBrowserConstants.SEARCH_DEBOUNCE_MS);
         }
 
         /// <summary>
@@ -399,7 +405,10 @@ namespace IconBrowser.UI
 
             // Preload all variant previews so the variant strip shows icons
             if (variants != null && variants.Count > 1)
-                AsyncHelper.FireAndForget(PreloadVariantPreviewsAsync(variants));
+            {
+                var ct = _cts.Token;
+                AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(PreloadVariantPreviewsAsync(variants, ct)));
+            }
 
             _detail.ShowEntry(entry, variants, browseMode: true);
         }
@@ -409,7 +418,30 @@ namespace IconBrowser.UI
             _detail.HandleSelectionChanged(entries, OnSelected);
         }
 
-        private void OnPendingSearchDrained(string query) => AsyncHelper.FireAndForget(_dc.SearchAsync(query));
+        private void OnPendingSearchDrained(string query)
+        {
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SearchAsync(query, ct)));
+        }
+
+        private void ResetRequestCts()
+        {
+            _cts.Cancel();
+            _cts.Dispose();
+            _cts = new CancellationTokenSource();
+        }
+
+        private static async Task IgnoreOperationCanceledAsync(Task task)
+        {
+            try
+            {
+                await task;
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal cancellation during tab/library switch.
+            }
+        }
 
         private void ShowLoading(bool loading)
         {

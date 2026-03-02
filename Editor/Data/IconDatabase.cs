@@ -21,7 +21,7 @@ namespace IconBrowser.Data
         private readonly Dictionary<string, IconLibrary> _libraries = new();
         private readonly Dictionary<string, List<string>> _collectionCache = new();
         private readonly Dictionary<string, Dictionary<string, List<string>>> _categoryCache = new();
-        private readonly Dictionary<string, string> _importedNames = new(); // name → prefix
+        private readonly Dictionary<string, string> _importedNames = new(); // prefix:name → prefix
         private bool _isBatchMode;
 
         public IReadOnlyList<IconEntry> LocalIcons => _localIcons;
@@ -53,9 +53,6 @@ namespace IconBrowser.Data
         {
             _localIcons.Clear();
             _importedNames.Clear();
-            _manifest.Invalidate();
-
-            var manifest = _manifest.GetAll();
             var guids = AssetDatabase.FindAssets("t:VectorImage");
             foreach (var guid in guids)
             {
@@ -67,7 +64,7 @@ namespace IconBrowser.Data
                 if (asset == null) continue;
 
                 var name = System.IO.Path.GetFileNameWithoutExtension(path);
-                var prefix = manifest.TryGetValue(name, out var p) ? p : "unknown";
+                var prefix = ExtractPrefixFromPath(path);
 
                 _localIcons.Add(new IconEntry
                 {
@@ -79,11 +76,25 @@ namespace IconBrowser.Data
                     Tags = Array.Empty<string>(),
                     Categories = Array.Empty<string>()
                 });
-                _importedNames[name] = prefix;
+                _importedNames[$"{prefix}:{name}"] = prefix;
             }
 
             _localIcons.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
             OnLocalIconsChanged?.Invoke();
+        }
+
+        private static string ExtractPrefixFromPath(string assetPath)
+        {
+            var iconsPath = IconBrowserSettings.IconsPath.Replace("\\", "/").TrimEnd('/');
+            var normalized = assetPath.Replace("\\", "/");
+            if (normalized.StartsWith(iconsPath + "/"))
+            {
+                var relative = normalized.Substring(iconsPath.Length + 1); // "lucide/check.svg"
+                var slash = relative.IndexOf('/');
+                if (slash > 0)
+                    return relative.Substring(0, slash); // "lucide"
+            }
+            return "unknown";
         }
 
         /// <summary>
@@ -245,11 +256,12 @@ namespace IconBrowser.Data
                     var parts = fullName.Split(':');
                     var p = parts.Length > 1 ? parts[0] : prefix;
                     var n = parts.Length > 1 ? parts[1] : parts[0];
+                    var key = $"{p}:{n}";
                     return new IconEntry
                     {
                         Name = n,
                         Prefix = p,
-                        IsImported = _importedNames.TryGetValue(n, out var ip) && ip == p,
+                        IsImported = _importedNames.TryGetValue(key, out var ip) && ip == p,
                         Tags = Array.Empty<string>(),
                         Categories = Array.Empty<string>()
                     };
@@ -284,11 +296,12 @@ namespace IconBrowser.Data
                         entryCategories = matching.ToArray();
                 }
 
+                var key = $"{prefix}:{n}";
                 return new IconEntry
                 {
                     Name = n,
                     Prefix = prefix,
-                    IsImported = _importedNames.TryGetValue(n, out var ip) && ip == prefix,
+                    IsImported = _importedNames.TryGetValue(key, out var ip) && ip == prefix,
                     Tags = Array.Empty<string>(),
                     Categories = entryCategories
                 };
@@ -296,9 +309,9 @@ namespace IconBrowser.Data
         }
 
         /// <summary>
-        /// Checks if an icon name is already imported locally.
+        /// Checks if an icon is already imported locally.
         /// </summary>
-        public bool IsImported(string name) => _importedNames.ContainsKey(name);
+        public bool IsImported(string name, string prefix) => _importedNames.ContainsKey($"{prefix}:{name}");
 
         /// <summary>
         /// Suppresses ScanLocalIcons during batch operations.
@@ -320,8 +333,41 @@ namespace IconBrowser.Data
         /// </summary>
         public void MarkImported(string name, string prefix)
         {
-            _importedNames[name] = prefix;
-            if (!_isBatchMode) ScanLocalIcons();
+            var key = $"{prefix}:{name}";
+            _importedNames[key] = prefix;
+            if (_isBatchMode) return;
+
+            if (_localIcons.Any(e => e.FullId == key))
+            {
+                OnLocalIconsChanged?.Invoke();
+                return;
+            }
+
+            var expectedPath = new IconEntry
+            {
+                Name = name,
+                Prefix = prefix
+            }.ImportedAssetPath;
+
+            var asset = AssetDatabase.LoadAssetAtPath<VectorImage>(expectedPath);
+            if (asset == null)
+            {
+                ScanLocalIcons();
+                return;
+            }
+
+            _localIcons.Add(new IconEntry
+            {
+                Name = name,
+                Prefix = prefix,
+                IsImported = true,
+                LocalAsset = asset,
+                LocalAssetPath = expectedPath,
+                Tags = Array.Empty<string>(),
+                Categories = Array.Empty<string>()
+            });
+            _localIcons.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
+            OnLocalIconsChanged?.Invoke();
         }
 
         /// <summary>
@@ -329,16 +375,19 @@ namespace IconBrowser.Data
         /// </summary>
         internal void SetImportedState(string name, string prefix)
         {
-            _importedNames[name] = prefix;
+            _importedNames[$"{prefix}:{name}"] = prefix;
         }
 
         /// <summary>
         /// Removes an icon from local tracking after delete.
         /// </summary>
-        public void MarkDeleted(string name)
+        public void MarkDeleted(string name, string prefix)
         {
-            _importedNames.Remove(name);
-            if (!_isBatchMode) ScanLocalIcons();
+            _importedNames.Remove($"{prefix}:{name}");
+            if (_isBatchMode) return;
+
+            _localIcons.RemoveAll(e => e.Name == name && e.Prefix == prefix);
+            OnLocalIconsChanged?.Invoke();
         }
     }
 }

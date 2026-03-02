@@ -22,17 +22,18 @@ namespace IconBrowser.UI
 
         private void OnImport(IconEntry entry)
         {
-            AsyncHelper.FireAndForget(OnImportAsync(entry));
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(OnImportAsync(entry, ct)));
         }
 
-        private async Task OnImportAsync(IconEntry entry)
+        private async Task OnImportAsync(IconEntry entry, CancellationToken ct = default)
         {
-            if (_cts.Token.IsCancellationRequested) return;
+            ct.ThrowIfCancellationRequested();
             EditorUtility.DisplayProgressBar("Importing Icon", $"Importing {entry.Name}...", 0.5f);
             try
             {
                 var success = await _ops.ImportAsync(entry.Prefix, entry.Name);
-                if (_cts.Token.IsCancellationRequested) return;
+                ct.ThrowIfCancellationRequested();
                 if (success)
                 {
                     entry.IsImported = true;
@@ -54,17 +55,19 @@ namespace IconBrowser.UI
 
         private void OnBatchImport(List<IconEntry> entries)
         {
-            AsyncHelper.FireAndForget(OnBatchImportAsync(entries));
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(OnBatchImportAsync(entries, ct)));
         }
 
-        private async Task OnBatchImportAsync(List<IconEntry> entries)
+        private async Task OnBatchImportAsync(List<IconEntry> entries, CancellationToken ct = default)
         {
-            var token = _cts.Token;
+            ct.ThrowIfCancellationRequested();
             int count = await EditorProgressHelper.RunWithProgressAsync(
                 "Importing Icons",
                 "Importing... ({0}/{1})",
                 (onProgress, isCancelled) => _ops.BatchImportAsync(entries, onProgress, isCancelled),
-                () => token.IsCancellationRequested);
+                () => ct.IsCancellationRequested);
+            ct.ThrowIfCancellationRequested();
 
             _grid.RefreshPreviews();
             OnIconImported?.Invoke();
@@ -114,11 +117,13 @@ namespace IconBrowser.UI
 
         private void OnVariantSelected(IconEntry variant)
         {
-            AsyncHelper.FireAndForget(OnVariantSelectedAsync(variant));
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(OnVariantSelectedAsync(variant, ct)));
         }
 
-        private async Task OnVariantSelectedAsync(IconEntry variant)
+        private async Task OnVariantSelectedAsync(IconEntry variant, CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             var variants = FindVariants(variant.Name);
 
             if (variant.PreviewSprite == null && variant.LocalAsset == null)
@@ -132,14 +137,17 @@ namespace IconBrowser.UI
                 {
                     await _previewCache.LoadPreviewBatchAsync(_dc.CurrentPrefix, new List<string> { variant.Name }, () =>
                     {
+                        if (ct.IsCancellationRequested) return;
                         var preview = _previewCache.GetPreview(variant.Prefix, variant.Name);
                         if (preview != null) variant.PreviewSprite = preview;
                         _detail.ShowEntry(variant, variants, browseMode: true);
                     });
+                    ct.ThrowIfCancellationRequested();
                     return;
                 }
             }
 
+            ct.ThrowIfCancellationRequested();
             _detail.ShowEntry(variant, variants, browseMode: true);
         }
 
@@ -147,8 +155,9 @@ namespace IconBrowser.UI
         //  Preview loading / visible range
         // ──────────────────────────────────────────
 
-        private async Task PreloadVariantPreviewsAsync(List<IconEntry> variants)
+        private async Task PreloadVariantPreviewsAsync(List<IconEntry> variants, CancellationToken ct = default)
         {
+            ct.ThrowIfCancellationRequested();
             var toLoad = new List<string>();
             foreach (var v in variants)
             {
@@ -165,6 +174,7 @@ namespace IconBrowser.UI
 
             await _previewCache.LoadPreviewBatchAsync(_dc.CurrentPrefix, toLoad, () =>
             {
+                if (ct.IsCancellationRequested) return;
                 foreach (var v in variants)
                 {
                     var p = _previewCache.GetPreview(v.Prefix, v.Name);
@@ -177,6 +187,7 @@ namespace IconBrowser.UI
                     _detail.ShowEntry(_detail.CurrentEntry, variants, browseMode: true);
                 }
             });
+            ct.ThrowIfCancellationRequested();
         }
 
         /// <summary>
@@ -246,25 +257,27 @@ namespace IconBrowser.UI
             if (nameSet.Count == 0) return;
 
             var names = new List<string>(nameSet);
+            var ct = _cts.Token;
 
             // Load previews asynchronously
-            AsyncHelper.FireAndForget(_previewCache.LoadPreviewBatchAsync(_dc.CurrentPrefix, names, () =>
-            {
-                // Update representative entries
-                for (int i = first; i <= last && i < groupedEntries.Count; i++)
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_previewCache.LoadPreviewBatchAsync(_dc.CurrentPrefix, names, () =>
                 {
-                    var entry = groupedEntries[i];
-                    var preview = _previewCache.GetPreview(entry.Prefix, entry.Name);
-                    if (preview != null) entry.PreviewSprite = preview;
-                }
-                // Update variant entries
-                foreach (var v in allVariantEntries)
-                {
-                    var preview = _previewCache.GetPreview(v.Prefix, v.Name);
-                    if (preview != null) v.PreviewSprite = preview;
-                }
-                _grid.RefreshPreviews();
-            }));
+                    if (ct.IsCancellationRequested) return;
+                    // Update representative entries
+                    for (int i = first; i <= last && i < groupedEntries.Count; i++)
+                    {
+                        var entry = groupedEntries[i];
+                        var preview = _previewCache.GetPreview(entry.Prefix, entry.Name);
+                        if (preview != null) entry.PreviewSprite = preview;
+                    }
+                    // Update variant entries
+                    foreach (var v in allVariantEntries)
+                    {
+                        var preview = _previewCache.GetPreview(v.Prefix, v.Name);
+                        if (preview != null) v.PreviewSprite = preview;
+                    }
+                    _grid.RefreshPreviews();
+                })));
         }
     }
 }

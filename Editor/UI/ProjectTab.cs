@@ -196,7 +196,7 @@ namespace IconBrowser.UI
         private void OnDelete(IconEntry entry)
         {
             bool deleted = !string.IsNullOrEmpty(entry.LocalAssetPath)
-                ? _ops.DeleteByPath(entry.LocalAssetPath, entry.Name)
+                ? _ops.DeleteByPath(entry.LocalAssetPath, entry.Name, entry.Prefix)
                 : _ops.Delete(entry.Name, entry.Prefix);
 
             if (deleted)

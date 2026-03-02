@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using IconBrowser.Data;
@@ -67,7 +68,7 @@ namespace IconBrowser
         public bool Delete(string name, string prefix)
         {
             if (!_importer.DeleteIcon(name, prefix)) return false;
-            _db.MarkDeleted(name);
+            _db.MarkDeleted(name, prefix);
             return true;
         }
 
@@ -77,8 +78,19 @@ namespace IconBrowser
         /// <returns>True if successful.</returns>
         public bool DeleteByPath(string assetPath, string name)
         {
+            var dir = Path.GetDirectoryName(assetPath)?.Replace('\\', '/');
+            var prefix = string.IsNullOrEmpty(dir) ? "" : Path.GetFileName(dir);
+            return DeleteByPath(assetPath, name, prefix);
+        }
+
+        /// <summary>
+        /// Deletes a single icon by asset path with explicit prefix.
+        /// </summary>
+        /// <returns>True if successful.</returns>
+        public bool DeleteByPath(string assetPath, string name, string prefix)
+        {
             if (!_importer.DeleteIconByPath(assetPath)) return false;
-            _db.MarkDeleted(name);
+            _db.MarkDeleted(name, prefix);
             return true;
         }
 
@@ -91,7 +103,7 @@ namespace IconBrowser
             Action<int, int> onProgress = null,
             Func<bool> isCancelled = null)
         {
-            return RunBatchAsync(
+            return RunBatch(
                 entries,
                 e => e.IsImported,
                 entry =>
@@ -103,12 +115,47 @@ namespace IconBrowser
                     if (success)
                     {
                         entry.IsImported = false;
-                        _db.MarkDeleted(entry.Name);
+                        _db.MarkDeleted(entry.Name, entry.Prefix);
                     }
-                    return Task.FromResult(success);
+                    return success;
                 },
                 isCancelled,
-                onProgress).Result;
+                onProgress);
+        }
+
+        /// <summary>
+        /// Shared sync batch-processing helper.
+        /// Filters items, wraps the loop in BeginBatch/EndBatch, and reports progress.
+        /// </summary>
+        private int RunBatch<T>(
+            List<T> items,
+            Func<T, bool> filter,
+            Func<T, bool> action,
+            Func<bool> isCancelled,
+            Action<int, int> onProgress)
+        {
+            var filtered = items.Where(filter).ToList();
+            if (filtered.Count == 0) return 0;
+
+            int count = 0;
+            _db.BeginBatch();
+            try
+            {
+                for (int i = 0; i < filtered.Count; i++)
+                {
+                    if (isCancelled?.Invoke() == true) break;
+                    onProgress?.Invoke(i + 1, filtered.Count);
+
+                    if (action(filtered[i]))
+                        count++;
+                }
+            }
+            finally
+            {
+                _db.EndBatch();
+            }
+
+            return count;
         }
 
         /// <summary>

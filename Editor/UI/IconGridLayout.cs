@@ -84,8 +84,9 @@ namespace IconBrowser.UI
             else
             {
                 if (_columns <= 0) return -1;
-                int row = (int)(contentY / CELL_HEIGHT);
-                int col = (int)(contentX / CELL_WIDTH);
+                // Use floor semantics so negative coordinates stay negative.
+                int row = Mathf.FloorToInt(contentY / CELL_HEIGHT);
+                int col = Mathf.FloorToInt(contentX / CELL_WIDTH);
                 if (col < 0 || col >= _columns || row < 0) return -1;
                 int idx = row * _columns + col;
                 return (idx >= 0 && idx < _itemCount) ? idx : -1;

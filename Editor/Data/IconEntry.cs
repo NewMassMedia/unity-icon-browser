@@ -49,7 +49,31 @@ namespace IconBrowser.Data
         /// <summary>
         /// Resources.Load path (e.g. "Icons/lucide/check").
         /// </summary>
-        public string ResourcePath => $"Icons/{Prefix}/{Name}";
+        public string ResourcePath
+        {
+            get
+            {
+                const string resourcesToken = "Resources/";
+                if (!string.IsNullOrEmpty(LocalAssetPath))
+                {
+                    var normalizedPath = LocalAssetPath.Replace("\\", "/");
+                    var resourcesIndex = normalizedPath.IndexOf(resourcesToken, System.StringComparison.Ordinal);
+                    if (resourcesIndex >= 0)
+                    {
+                        var resourcePath = normalizedPath.Substring(resourcesIndex + resourcesToken.Length);
+                        var lastSlashIndex = resourcePath.LastIndexOf('/');
+                        var extensionIndex = resourcePath.LastIndexOf('.');
+                        if (extensionIndex > lastSlashIndex)
+                            resourcePath = resourcePath.Substring(0, extensionIndex);
+
+                        if (!string.IsNullOrEmpty(resourcePath))
+                            return resourcePath;
+                    }
+                }
+
+                return $"Icons/{Prefix}/{Name}";
+            }
+        }
 
         /// <summary>
         /// Code snippet for loading this icon.
