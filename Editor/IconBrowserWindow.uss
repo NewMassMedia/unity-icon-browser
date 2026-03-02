@@ -443,21 +443,6 @@
     background-color: rgb(35, 35, 35);
 }
 
-.project-tab__fix-btn {
-    margin-left: 8px;
-    padding: 4px 8px;
-    font-size: 10px;
-    border-radius: 4px;
-    background-color: rgba(200, 160, 60, 0.2);
-    color: rgb(220, 180, 80);
-    border-color: rgb(200, 160, 60);
-    border-width: 1px;
-}
-
-.project-tab__fix-btn:hover {
-    background-color: rgba(200, 160, 60, 0.35);
-}
-
 .project-tab__refresh-btn {
     margin-left: auto;
     padding: 4px 8px;

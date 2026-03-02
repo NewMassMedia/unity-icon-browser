@@ -18,7 +18,6 @@ namespace IconBrowser.UI
         private readonly IconGrid _grid;
         private readonly IconDetailPanel _detail;
         private readonly VisualElement _libraryBar;
-        private readonly Button _fixUnknownBtn;
         private readonly Button _refreshBtn;
         private ToastNotification _toast;
 
@@ -35,10 +34,6 @@ namespace IconBrowser.UI
             _libraryBar = new VisualElement();
             _libraryBar.AddToClassList("project-tab__filter-bar");
             Add(_libraryBar);
-
-            _fixUnknownBtn = new Button(OnFixUnknown) { text = "Fix Unknown \u2192 lucide" };
-            _fixUnknownBtn.AddToClassList("project-tab__fix-btn");
-            _fixUnknownBtn.style.display = DisplayStyle.None;
 
             _refreshBtn = new Button(OnRefresh) { text = "\u21BB" };
             _refreshBtn.AddToClassList("project-tab__refresh-btn");
@@ -129,22 +124,7 @@ namespace IconBrowser.UI
                 _libraryBar.Add(btn);
             }
 
-            // "Fix Unknown" button at the end
-            _fixUnknownBtn.style.display = prefixes.Contains("unknown")
-                ? DisplayStyle.Flex : DisplayStyle.None;
-            _libraryBar.Add(_fixUnknownBtn);
             _libraryBar.Add(_refreshBtn);
-        }
-
-        private void OnFixUnknown()
-        {
-            int count = _db.ReassignUnknownIcons("lucide");
-            if (count > 0)
-            {
-                Debug.Log($"[IconBrowser] Reassigned {count} unknown icons to 'lucide'");
-                RefreshLibraryFilter();
-                Refresh();
-            }
         }
 
         private void OnRefresh()
