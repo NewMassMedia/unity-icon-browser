@@ -20,6 +20,7 @@ Search, preview, and import **200,000+ open-source icons** from [Iconify](https:
 - **One-click import** as SVG VectorImage (resolution-independent)
 - **Batch import/delete** with cancelable progress
 - **Project tab** for managing imported icons with library filter
+- **Focus imported icon** in Unity Project window from the detail panel (Project/Browse tabs)
 - **Atlas-based preview cache** for instant loading across sessions
 - **Prefix subfolder** storage to prevent name collisions between libraries
 - **`Resources.Load` ready** — imported icons are immediately usable in code
@@ -57,12 +58,14 @@ Search, preview, and import **200,000+ open-source icons** from [Iconify](https:
 1. Select a library from the left sidebar
 2. Browse icons or use the search bar
 3. Click an icon to see details, then click **Import**
-4. Or select multiple icons and use **Batch Import**
+4. For imported icons, click **Focus** to ping/select the asset in the Project window
+5. Or select multiple icons and use **Batch Import**
 
 ### Project tab
 
 - View all imported icons in your project
 - Filter by library using the pill buttons
+- Click **Focus** on an imported icon to locate it in the Project window
 - Select and batch delete icons you no longer need
 
 ### Use in code
