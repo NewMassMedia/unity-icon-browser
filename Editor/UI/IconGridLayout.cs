@@ -69,6 +69,10 @@ namespace IconBrowser.UI
         /// </summary>
         public int DataIndexAtContent(float contentX, float contentY)
         {
+            if (float.IsNaN(contentX) || float.IsInfinity(contentX) ||
+                float.IsNaN(contentY) || float.IsInfinity(contentY))
+                return -1;
+
             if (_isGrouped)
             {
                 for (int i = 0; i < _entries.Count; i++)

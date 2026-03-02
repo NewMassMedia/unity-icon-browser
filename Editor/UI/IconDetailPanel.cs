@@ -23,6 +23,7 @@ namespace IconBrowser.UI
         private readonly VisualElement _variantStrip;
         private readonly Label _codeLabel;
         private readonly Button _copyBtn;
+        private readonly Button _focusBtn;
         private readonly Button _importBtn;
         private readonly Button _deleteBtn;
         private readonly VisualElement _content;
@@ -137,6 +138,10 @@ namespace IconBrowser.UI
             _copyBtn.AddToClassList("icon-detail__btn");
             buttons.Add(_copyBtn);
 
+            _focusBtn = new Button(OnFocus) { text = "Focus" };
+            _focusBtn.AddToClassList("icon-detail__btn");
+            buttons.Add(_focusBtn);
+
             _importBtn = new Button(OnImport) { text = "Import" };
             _importBtn.AddToClassList("icon-detail__btn");
             _importBtn.AddToClassList("icon-detail__btn--import");
@@ -236,6 +241,7 @@ namespace IconBrowser.UI
             _codeLabel.text = entry.LoadSnippet;
             _codeLabel.style.display = showCode ? DisplayStyle.Flex : DisplayStyle.None;
             _copyBtn.style.display = showCode ? DisplayStyle.Flex : DisplayStyle.None;
+            _focusBtn.style.display = entry.IsImported ? DisplayStyle.Flex : DisplayStyle.None;
 
             // Button visibility
             _importBtn.style.display = entry.IsImported ? DisplayStyle.None : DisplayStyle.Flex;
@@ -359,6 +365,85 @@ namespace IconBrowser.UI
         {
             if (_currentEntry == null) return;
             OnImportClicked?.Invoke(_currentEntry);
+        }
+
+        private void OnFocus()
+        {
+            if (_currentEntry == null || !_currentEntry.IsImported) return;
+
+            var asset = ResolveImportedAsset(_currentEntry, out var assetPath);
+            if (asset == null)
+            {
+                Debug.LogWarning($"[IconBrowser] Could not locate imported asset for '{_currentEntry.FullId}'.");
+                return;
+            }
+
+            _currentEntry.LocalAsset = asset;
+            _currentEntry.LocalAssetPath = assetPath;
+
+            EditorUtility.FocusProjectWindow();
+            Selection.activeObject = asset;
+            EditorGUIUtility.PingObject(asset);
+        }
+
+        private static VectorImage ResolveImportedAsset(IconEntry entry, out string assetPath)
+        {
+            assetPath = entry.LocalAssetPath;
+
+            if (entry.LocalAsset != null && AssetDatabase.Contains(entry.LocalAsset))
+            {
+                if (string.IsNullOrEmpty(assetPath))
+                    assetPath = AssetDatabase.GetAssetPath(entry.LocalAsset);
+                if (!string.IsNullOrEmpty(assetPath))
+                {
+                    var byLocalPath = AssetDatabase.LoadAssetAtPath<VectorImage>(assetPath);
+                    if (byLocalPath != null)
+                        return byLocalPath;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(assetPath))
+            {
+                var byPath = AssetDatabase.LoadAssetAtPath<VectorImage>(assetPath);
+                if (byPath != null)
+                    return byPath;
+            }
+
+            var expectedPath = entry.ImportedAssetPath;
+            var byExpectedPath = AssetDatabase.LoadAssetAtPath<VectorImage>(expectedPath);
+            if (byExpectedPath != null)
+            {
+                assetPath = expectedPath;
+                return byExpectedPath;
+            }
+
+            var rootPath = IconBrowserSettings.IconsPath.Replace("\\", "/").TrimEnd('/');
+            var prefixPath = $"{rootPath}/{entry.Prefix}";
+            var searchRoots = AssetDatabase.IsValidFolder(prefixPath)
+                ? new[] { prefixPath }
+                : (AssetDatabase.IsValidFolder(rootPath) ? new[] { rootPath } : Array.Empty<string>());
+
+            var guids = searchRoots.Length > 0
+                ? AssetDatabase.FindAssets($"{entry.Name} t:VectorImage", searchRoots)
+                : AssetDatabase.FindAssets($"{entry.Name} t:VectorImage");
+
+            foreach (var guid in guids)
+            {
+                var candidatePath = AssetDatabase.GUIDToAssetPath(guid).Replace("\\", "/");
+                if (!candidatePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!string.Equals(System.IO.Path.GetFileNameWithoutExtension(candidatePath), entry.Name, StringComparison.Ordinal))
+                    continue;
+
+                var asset = AssetDatabase.LoadAssetAtPath<VectorImage>(candidatePath);
+                if (asset == null)
+                    continue;
+
+                assetPath = candidatePath;
+                return asset;
+            }
+
+            return null;
         }
 
         private void OnDelete()
