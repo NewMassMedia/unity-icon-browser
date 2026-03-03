@@ -47,18 +47,20 @@ namespace IconBrowser.Data
         public IconDatabase() : this(IconifyClient.Default, IconManifest.Default) { }
 
         /// <summary>
-        /// Scans the entire project for SVG VectorImage assets.
+        /// Scans project SVG VectorImage assets, excluding known non-icon-browser folders.
         /// </summary>
         public void ScanLocalIcons()
         {
             _localIcons.Clear();
             _importedNames.Clear();
+
             var guids = AssetDatabase.FindAssets("t:VectorImage");
             foreach (var guid in guids)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
-                if (!path.EndsWith(".svg")) continue;
-                if (path.StartsWith(IconBrowserConstants.TEMP_ASSET_PATH)) continue;
+                if (!path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)) continue;
+                if (path.StartsWith(IconBrowserConstants.TEMP_ASSET_PATH, StringComparison.OrdinalIgnoreCase)) continue;
+                if (IsExcludedExternalPath(path)) continue;
 
                 var asset = AssetDatabase.LoadAssetAtPath<VectorImage>(path);
                 if (asset == null) continue;
@@ -95,6 +97,16 @@ namespace IconBrowser.Data
                     return relative.Substring(0, slash); // "lucide"
             }
             return "unknown";
+        }
+
+        private static bool IsExcludedExternalPath(string assetPath)
+        {
+            if (string.IsNullOrWhiteSpace(assetPath))
+                return false;
+
+            var normalized = assetPath.Replace("\\", "/");
+            return normalized.IndexOf("/unity-cursor-browser/", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   normalized.IndexOf("/Resources/Cursor/", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>
