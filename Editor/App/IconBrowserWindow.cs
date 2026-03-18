@@ -101,8 +101,7 @@ namespace IconBrowser
             _searchField = new ToolbarSearchField();
             _searchField.AddToClassList("icon-browser__search");
             _searchField.RegisterValueChangedCallback(OnSearchChanged);
-            _searchField.RegisterCallback<KeyDownEvent>(OnSearchKeyDown);
-            _searchField.RegisterCallback<KeyDownEvent>(OnSearchKeyDown, TrickleDown.TrickleDown);
+            _searchField.RegisterCallback<KeyUpEvent>(OnSearchKeyUp);
             _tabBar.Add(_searchField);
 
             // Tab content
@@ -201,15 +200,15 @@ namespace IconBrowser
                 _activeSearchTarget.Search(evt.newValue);
         }
 
-        private void OnSearchKeyDown(KeyDownEvent evt)
+        private void OnSearchKeyUp(KeyUpEvent evt)
         {
             if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter)
                 return;
 
-            if (!_searchShellPolicy.ShouldDispatchOnSubmit(_activeSearchTarget, _searchField.value))
-                return;
+            var query = _searchField.value;
+            if (_searchShellPolicy.ShouldDispatchOnSubmit(_activeSearchTarget, query))
+                _activeSearchTarget.Search(query);
 
-            _activeSearchTarget.Search(_searchField.value);
             evt.StopPropagation();
         }
 

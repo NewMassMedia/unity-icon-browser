@@ -55,10 +55,10 @@ namespace IconBrowser.Import
         }
 
         /// <summary>
-        /// Gets a tooltip-dedicated sprite for the icon.
+        /// Gets a standalone sprite copy for the icon.
         /// The sprite is copied into a standalone texture so it survives atlas eviction.
         /// </summary>
-        public Sprite GetTooltipPreview(string prefix, string name)
+        public Sprite GetStablePreview(string prefix, string name)
         {
             if (string.IsNullOrEmpty(prefix) || string.IsNullOrEmpty(name))
                 return null;
@@ -91,6 +91,15 @@ namespace IconBrowser.Import
         }
 
         /// <summary>
+        /// Gets a tooltip-dedicated sprite for the icon.
+        /// Returns a standalone copy so tooltip previews survive atlas eviction.
+        /// </summary>
+        public Sprite GetTooltipPreview(string prefix, string name)
+        {
+            return GetStablePreview(prefix, name);
+        }
+
+        /// <summary>
         /// Promotes loaded previews into tooltip-dedicated cache.
         /// </summary>
         public void WarmTooltipCache(string prefix, IEnumerable<string> names)
@@ -101,7 +110,7 @@ namespace IconBrowser.Import
             foreach (var name in names)
             {
                 if (string.IsNullOrEmpty(name)) continue;
-                GetTooltipPreview(prefix, name);
+                GetStablePreview(prefix, name);
             }
         }
 

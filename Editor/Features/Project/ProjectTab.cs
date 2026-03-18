@@ -47,6 +47,7 @@ namespace IconBrowser.UI
             body.Add(_grid);
 
             _detail = new IconDetailPanel();
+            _detail.ConfirmSingleDelete = false;
             body.Add(_detail);
 
             _grid.ShowActionButtons = true;

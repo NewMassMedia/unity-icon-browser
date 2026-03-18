@@ -22,3 +22,5 @@ docs/agent-team/
 docs/agent-team.meta
 docs/agent-team/*.meta
 docs.meta
+Tests/
+Tests.meta

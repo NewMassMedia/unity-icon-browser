@@ -269,11 +269,14 @@ namespace IconBrowser.Data
                     var p = parts.Length > 1 ? parts[0] : prefix;
                     var n = parts.Length > 1 ? parts[1] : parts[0];
                     var key = $"{p}:{n}";
+                    var localMatch = _localIcons.FirstOrDefault(e => e.Name == n && e.Prefix == p);
                     return new IconEntry
                     {
                         Name = n,
                         Prefix = p,
-                        IsImported = _importedNames.TryGetValue(key, out var ip) && ip == p,
+                        IsImported = localMatch != null || (_importedNames.TryGetValue(key, out var ip) && ip == p),
+                        LocalAsset = localMatch?.LocalAsset,
+                        LocalAssetPath = localMatch?.LocalAssetPath,
                         Tags = Array.Empty<string>(),
                         Categories = Array.Empty<string>()
                     };

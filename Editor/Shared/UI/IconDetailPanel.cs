@@ -41,6 +41,7 @@ namespace IconBrowser.UI
         private bool _isBrowseMode;
 
         public IconEntry CurrentEntry => _currentEntry;
+        public bool ConfirmSingleDelete { get; set; } = true;
 
         public event Action<IconEntry> OnImportClicked = delegate { };
         public event Action<IconEntry> OnDeleteClicked = delegate { };
@@ -449,6 +450,12 @@ namespace IconBrowser.UI
         private void OnDelete()
         {
             if (_currentEntry == null) return;
+
+            if (!ConfirmSingleDelete)
+            {
+                OnDeleteClicked?.Invoke(_currentEntry);
+                return;
+            }
 
             if (EditorUtility.DisplayDialog(
                 "Delete Icon",

@@ -295,7 +295,6 @@ namespace IconBrowser.UI
 
                 SetBrowseContentMode(showGlobalSearchResults: true);
                 _globalResultsView.SetSections(sections);
-                _globalResultsView.RefreshItems();
                 EnsureGlobalSearchPreviewsLoaded(sections, _globalSearchSession.RequestVersion);
                 return;
             }
@@ -324,7 +323,7 @@ namespace IconBrowser.UI
             _globalResultsView.ClearSelection();
         }
 
-        private void ApplyCachedPreview(IconEntry entry)
+        private void ApplyCachedPreview(IconEntry entry, bool preferStablePreview = false)
         {
             if (entry == null)
                 return;
@@ -333,7 +332,9 @@ namespace IconBrowser.UI
             if (entry.IsImported && entry.LocalAsset != null)
                 return;
 
-            var sprite = _previewCache.GetPreview(entry.Prefix, entry.Name);
+            var sprite = preferStablePreview
+                ? _previewCache.GetStablePreview(entry.Prefix, entry.Name)
+                : _previewCache.GetPreview(entry.Prefix, entry.Name);
             if (sprite != null)
                 entry.PreviewSprite = sprite;
         }
@@ -371,7 +372,7 @@ namespace IconBrowser.UI
                     if (entry.IsImported && entry.LocalAsset != null)
                         continue;
 
-                    var cached = _previewCache.GetPreview(entry.Prefix, entry.Name);
+                    var cached = _previewCache.GetStablePreview(entry.Prefix, entry.Name);
                     if (cached != null)
                     {
                         entry.PreviewSprite = cached;
@@ -405,7 +406,7 @@ namespace IconBrowser.UI
                             return;
 
                         foreach (var entry in allEntries)
-                            ApplyCachedPreview(entry);
+                            ApplyCachedPreview(entry, preferStablePreview: true);
 
                         _globalResultsView.RefreshItems();
                         RefreshDetailPreviewIfVisible();

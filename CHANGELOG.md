@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.1] - 2026-03-18
+
+### Changed
+- Global search submit now runs on the first Enter press instead of requiring a second submit.
+- Project tab single-item delete now executes immediately without an extra confirmation dialog.
+
+### Fixed
+- Stabilized global search cell previews so loaded icons do not disappear when preview atlases are evicted or prefixes change.
+- Reused imported local `VectorImage` assets in remote search results when the icon already exists in the project.
+- Removed redundant global search result refresh work during section rebuilds.
+
 ## [1.3.0] - 2026-03-02
 
 ### Added
