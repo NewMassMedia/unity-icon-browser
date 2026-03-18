@@ -9,10 +9,13 @@
 
 # Serena agent memories
 .serena/
+.unity-guide/
+.superpowers/
 
 # Local agent-team docs (do not commit)
 AGENTS.md
 AGENTS.md.meta
+docs/
 docs/icon-preview-rearchitecture-plan.md
 docs/icon-preview-rearchitecture-plan.md.meta
 docs/agent-team/
