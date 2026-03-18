@@ -8,7 +8,7 @@ namespace IconBrowser
     internal static class IconBrowserSettings
     {
         private const string PREF_ICONS_PATH = "IconBrowser_IconsPath";
-        private const string DEFAULT_PATH = "Assets/CoreUI/Runtime/Resources/Icons";
+        private const string DEFAULT_PATH = "Assets/Resources/Icon";
 
         /// <summary>
         /// Target folder for imported icons.
@@ -48,6 +48,17 @@ namespace IconBrowser
         {
             get => EditorPrefs.GetBool(PREF_VERBOSE_CACHE_LOGS, false);
             set => EditorPrefs.SetBool(PREF_VERBOSE_CACHE_LOGS, value);
+        }
+
+        /// <summary>
+        /// Removes persisted settings so the defaults are used again.
+        /// </summary>
+        public static void ResetToDefaults()
+        {
+            EditorPrefs.DeleteKey(PREF_ICONS_PATH);
+            EditorPrefs.DeleteKey(PREF_FILTER_MODE);
+            EditorPrefs.DeleteKey(PREF_SAMPLE_COUNT);
+            EditorPrefs.DeleteKey(PREF_VERBOSE_CACHE_LOGS);
         }
     }
 }

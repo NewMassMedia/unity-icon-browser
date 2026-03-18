@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -29,6 +30,7 @@ namespace IconBrowser
         private SvgPreviewCache _previewCache;
 
         private ToolbarSearchField _searchField;
+        private readonly SearchShellPolicy _searchShellPolicy = new();
         private VisualElement _tabBar;
         private Button _projectTabBtn;
         private Button _browseTabBtn;
@@ -38,6 +40,9 @@ namespace IconBrowser
         private ProjectTab _projectTab;
         private BrowseTab _browseTab;
         private SettingsTab _settingsTab;
+        private IIconBrowserSearchTarget _projectSearchTarget;
+        private IIconBrowserSearchTarget _browseSearchTarget;
+        private IIconBrowserSearchTarget _activeSearchTarget;
         private ToastNotification _toast;
 
         private int _activeTab; // 0 = Project, 1 = Browse, 2 = Settings
@@ -96,6 +101,8 @@ namespace IconBrowser
             _searchField = new ToolbarSearchField();
             _searchField.AddToClassList("icon-browser__search");
             _searchField.RegisterValueChangedCallback(OnSearchChanged);
+            _searchField.RegisterCallback<KeyDownEvent>(OnSearchKeyDown);
+            _searchField.RegisterCallback<KeyDownEvent>(OnSearchKeyDown, TrickleDown.TrickleDown);
             _tabBar.Add(_searchField);
 
             // Tab content
@@ -112,6 +119,8 @@ namespace IconBrowser
             _browseTab.SetToast(_toast);
             _browseTab.OnIconImported -= OnIconImported;
             _browseTab.OnIconImported += OnIconImported;
+            _browseTab.OnGlobalSearchExitedViaLibraryClick -= OnBrowseGlobalSearchExitedViaLibraryClick;
+            _browseTab.OnGlobalSearchExitedViaLibraryClick += OnBrowseGlobalSearchExitedViaLibraryClick;
             tabContent.Add(_browseTab);
 
             _settingsTab = new SettingsTab(_previewCache);
@@ -119,6 +128,10 @@ namespace IconBrowser
             _settingsTab.OnImportPathChanged -= OnImportPathChanged;
             _settingsTab.OnImportPathChanged += OnImportPathChanged;
             tabContent.Add(_settingsTab);
+
+            _projectSearchTarget = new SearchTargetDelegate(_projectTab.Search, SearchDispatchMode.Immediate);
+            _browseSearchTarget = new SearchTargetDelegate(_browseTab.Search, SearchDispatchMode.Deferred);
+            _activeSearchTarget = _searchShellPolicy.ResolveTargetForInputChanged(_activeTab, _projectSearchTarget, _browseSearchTarget);
 
             UpdateProjectTabLabel();
         }
@@ -133,6 +146,8 @@ namespace IconBrowser
 
         private void SwitchTab(int tab)
         {
+            var previousTab = _activeTab;
+            var previousSearchText = _searchField?.value ?? string.Empty;
             _activeTab = tab;
 
             _projectTabBtn.EnableInClassList("icon-browser__tab-btn--active", tab == 0);
@@ -143,11 +158,33 @@ namespace IconBrowser
             _browseTab.style.display = tab == 1 ? DisplayStyle.Flex : DisplayStyle.None;
             _settingsTab.style.display = tab == 2 ? DisplayStyle.Flex : DisplayStyle.None;
 
-            // Hide search field on Settings tab
-            _searchField.style.display = tab == 2 ? DisplayStyle.None : DisplayStyle.Flex;
+            _searchField.style.display = _searchShellPolicy.IsSearchVisible(tab) ? DisplayStyle.Flex : DisplayStyle.None;
+            _activeSearchTarget = _searchShellPolicy.ResolveTargetForInputChanged(tab, _projectSearchTarget, _browseSearchTarget);
+            var shouldSyncSearchTargetOnTabSwitch = _searchShellPolicy.ShouldSyncSearchTargetOnTabSwitch(previousTab, tab);
 
-            // Clear search when switching tabs
-            _searchField.value = "";
+            if (_searchShellPolicy.ShouldResetSearchTextOnTabSwitch(previousTab, tab))
+            {
+                if (_searchShellPolicy.ShouldClearSearchTextWithoutDispatch(tab))
+                    _searchField.SetValueWithoutNotify(string.Empty);
+                else
+                    _searchField.value = string.Empty;
+            }
+
+            if (previousTab != tab &&
+                tab == 1 &&
+                _activeSearchTarget?.DispatchMode == SearchDispatchMode.Deferred &&
+                string.IsNullOrWhiteSpace(previousSearchText) &&
+                string.IsNullOrWhiteSpace(_searchField.value) &&
+                !shouldSyncSearchTargetOnTabSwitch)
+            {
+                _activeSearchTarget.Search(string.Empty);
+            }
+
+            if (shouldSyncSearchTargetOnTabSwitch &&
+                _searchShellPolicy.ShouldDispatchOnInputChanged(_activeSearchTarget, _searchField.value))
+            {
+                _activeSearchTarget.Search(_searchField.value);
+            }
 
             _browseTab.SetTabActive(tab == 1);
 
@@ -160,10 +197,25 @@ namespace IconBrowser
 
         private void OnSearchChanged(ChangeEvent<string> evt)
         {
-            if (_activeTab == 0)
-                _projectTab.Search(evt.newValue);
-            else
-                _browseTab.Search(evt.newValue);
+            if (_searchShellPolicy.ShouldDispatchOnInputChanged(_activeSearchTarget, evt.newValue))
+                _activeSearchTarget.Search(evt.newValue);
+        }
+
+        private void OnSearchKeyDown(KeyDownEvent evt)
+        {
+            if (evt.keyCode != KeyCode.Return && evt.keyCode != KeyCode.KeypadEnter)
+                return;
+
+            if (!_searchShellPolicy.ShouldDispatchOnSubmit(_activeSearchTarget, _searchField.value))
+                return;
+
+            _activeSearchTarget.Search(_searchField.value);
+            evt.StopPropagation();
+        }
+
+        private void OnBrowseGlobalSearchExitedViaLibraryClick()
+        {
+            _searchField?.SetValueWithoutNotify(string.Empty);
         }
 
         private void LoadLibrariesAsync()
@@ -239,9 +291,27 @@ namespace IconBrowser
 
         private void OnDestroy()
         {
+            if (_browseTab != null)
+                _browseTab.OnGlobalSearchExitedViaLibraryClick -= OnBrowseGlobalSearchExitedViaLibraryClick;
+
             _projectTab?.Detach();
             _browseTab?.Detach();
             _previewCache?.Destroy();
+        }
+
+        private sealed class SearchTargetDelegate : IIconBrowserSearchTarget
+        {
+            private readonly Action<string> _search;
+
+            public SearchDispatchMode DispatchMode { get; }
+
+            public SearchTargetDelegate(Action<string> search, SearchDispatchMode dispatchMode)
+            {
+                _search = search;
+                DispatchMode = dispatchMode;
+            }
+
+            public void Search(string query) => _search(query);
         }
     }
 }

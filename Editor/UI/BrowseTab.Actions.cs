@@ -37,8 +37,9 @@ namespace IconBrowser.UI
                 if (success)
                 {
                     entry.IsImported = true;
-                    _detail.ShowEntry(entry, FindVariants(entry.Name), browseMode: true);
+                    _detail.ShowEntry(entry, FindVariants(entry), browseMode: true);
                     _grid.RefreshPreviews();
+                    _globalResultsView.RefreshItems();
                     OnIconImported?.Invoke();
                     _toast?.ShowInfo($"Imported {entry.Name}");
                 }
@@ -70,6 +71,7 @@ namespace IconBrowser.UI
             ct.ThrowIfCancellationRequested();
 
             _grid.RefreshPreviews();
+            _globalResultsView.RefreshItems();
             OnIconImported?.Invoke();
             if (count > 0)
                 _toast?.ShowInfo($"Imported {count} icon(s)");
@@ -84,8 +86,9 @@ namespace IconBrowser.UI
             if (_ops.Delete(entry.Name, entry.Prefix))
             {
                 entry.IsImported = false;
-                _detail.ShowEntry(entry, FindVariants(entry.Name), browseMode: true);
+                _detail.ShowEntry(entry, FindVariants(entry), browseMode: true);
                 _grid.RefreshPreviews();
+                _globalResultsView.RefreshItems();
                 OnIconImported?.Invoke();
                 _toast?.ShowError($"Deleted {entry.Name}");
             }
@@ -106,6 +109,7 @@ namespace IconBrowser.UI
             if (deletedCount > 0)
             {
                 _grid.RefreshPreviews();
+                _globalResultsView.RefreshItems();
                 OnIconImported?.Invoke();
                 _toast?.ShowError($"Deleted {deletedCount} icon(s)");
             }
@@ -124,7 +128,7 @@ namespace IconBrowser.UI
         private async Task OnVariantSelectedAsync(IconEntry variant, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
-            var variants = FindVariants(variant.Name);
+            var variants = FindVariants(variant);
 
             if (variant.PreviewSprite == null && variant.LocalAsset == null)
             {
@@ -135,7 +139,7 @@ namespace IconBrowser.UI
                 }
                 else
                 {
-                    await _previewCache.LoadPreviewBatchAsync(_dc.CurrentPrefix, new List<string> { variant.Name }, () =>
+                    await _previewCache.LoadPreviewBatchAsync(variant.Prefix, new List<string> { variant.Name }, () =>
                     {
                         if (ct.IsCancellationRequested) return;
                         var preview = _previewCache.GetPreview(variant.Prefix, variant.Name);

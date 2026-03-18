@@ -21,7 +21,10 @@ namespace IconBrowser.UI
         private string _selectedCategory = "";
         private string _selectedVariant = "";
         private bool _isLoading;
+        private bool _hasGlobalSearchResults;
         private string _pendingSearchQuery;
+        private int _pendingSearchVersion;
+        private int _loadingRequestVersion;
 
         private List<IconEntry> _allEntries = new();
         private List<IconEntry> _filteredEntries = new();
@@ -35,16 +38,9 @@ namespace IconBrowser.UI
         public List<IconEntry> GroupedEntries => _groupedEntries;
         public IReadOnlyDictionary<string, List<IconEntry>> VariantMap => _variantMap;
 
-        /// <summary>Fired when the filtered/grouped entries change.</summary>
         public event Action OnEntriesChanged = delegate { };
-
-        /// <summary>Fired when categories are available for the current prefix.</summary>
         public event Action<List<string>> OnCategoriesLoaded = delegate { };
-
-        /// <summary>Fired when a pending search drains.</summary>
-        public event Action<string> OnPendingSearchDrained = delegate { };
-
-        /// <summary>Fired when loading state changes.</summary>
+        public event Action<string, int> OnPendingSearchDrained = delegate { };
         public event Action<bool> OnLoadingChanged = delegate { };
 
         public BrowseDataController(IconDatabase db)
@@ -52,79 +48,86 @@ namespace IconBrowser.UI
             _db = db ?? throw new ArgumentNullException(nameof(db));
         }
 
-        /// <summary>
-        /// Sets the current library prefix and loads its collection.
-        /// </summary>
-        public async Task SetPrefixAndLoadAsync(string prefix, CancellationToken ct = default)
+        public async Task SetPrefixAndLoadAsync(
+            string prefix,
+            int requestVersion = 0,
+            CancellationToken ct = default,
+            bool preserveBrowseFilters = false)
         {
             ct.ThrowIfCancellationRequested();
             _currentPrefix = prefix;
-            _selectedCategory = "";
-            _selectedVariant = "";
-            await LoadCollectionAsync(prefix, ct);
+            _hasGlobalSearchResults = false;
+            if (!preserveBrowseFilters)
+            {
+                _selectedCategory = "";
+                _selectedVariant = "";
+            }
+
+            await LoadCollectionAsync(prefix, requestVersion, ct);
             ct.ThrowIfCancellationRequested();
         }
 
-        /// <summary>
-        /// Sets the category filter and reapplies filters.
-        /// </summary>
         public void SetCategory(string category)
         {
             _selectedCategory = category;
             ApplyFilters();
         }
 
-        /// <summary>
-        /// Sets the variant filter and reapplies filters.
-        /// </summary>
         public void SetVariant(string variant)
         {
             _selectedVariant = variant;
             ApplyFilters();
         }
 
-        /// <summary>
-        /// Performs a remote search for the given query.
-        /// </summary>
-        public async Task SearchAsync(string query, CancellationToken ct = default)
+        public async Task ExecuteGlobalSearchAsync(string query, int requestVersion = 0, CancellationToken ct = default)
         {
+            var normalizedQuery = query?.Trim();
+            if (string.IsNullOrEmpty(normalizedQuery))
+                return;
+
             ct.ThrowIfCancellationRequested();
-            if (_isLoading)
+            if (_isLoading && _loadingRequestVersion == requestVersion)
             {
-                _pendingSearchQuery = query;
+                _pendingSearchQuery = normalizedQuery;
+                _pendingSearchVersion = requestVersion;
                 return;
             }
+
             _isLoading = true;
+            _loadingRequestVersion = requestVersion;
             _pendingSearchQuery = null;
+            _pendingSearchVersion = 0;
             OnLoadingChanged?.Invoke(true);
 
             try
             {
                 ct.ThrowIfCancellationRequested();
-                _allEntries = await _db.SearchRemoteAsync(query, _currentPrefix);
+                var entries = await _db.SearchRemoteAsync(normalizedQuery, string.Empty);
                 ct.ThrowIfCancellationRequested();
+                if (requestVersion != 0 && _loadingRequestVersion != requestVersion)
+                    return;
+
+                _allEntries = entries;
+                _hasGlobalSearchResults = true;
                 ApplyFilters();
             }
             finally
             {
-                _isLoading = false;
-                OnLoadingChanged?.Invoke(false);
-                if (ct.IsCancellationRequested)
-                    _pendingSearchQuery = null;
-                else
-                    DrainPendingSearch();
+                CompleteRequest(ct, requestVersion);
             }
         }
 
-        /// <summary>
-        /// Loads the full collection for the given prefix.
-        /// </summary>
-        public async Task LoadCollectionAsync(string prefix, CancellationToken ct = default)
+        public async Task LoadCollectionAsync(string prefix, int requestVersion = 0, CancellationToken ct = default)
         {
             ct.ThrowIfCancellationRequested();
-            if (_isLoading) return;
+
+            if (_isLoading && _loadingRequestVersion == requestVersion)
+                return;
+
             _isLoading = true;
+            _loadingRequestVersion = requestVersion;
             _pendingSearchQuery = null;
+            _pendingSearchVersion = 0;
             OnLoadingChanged?.Invoke(true);
 
             try
@@ -132,6 +135,9 @@ namespace IconBrowser.UI
                 ct.ThrowIfCancellationRequested();
                 var names = await _db.GetCollectionIconsAsync(prefix);
                 ct.ThrowIfCancellationRequested();
+                if (requestVersion != 0 && _loadingRequestVersion != requestVersion)
+                    return;
+
                 _allEntries = _db.CreateEntries(prefix, names);
 
                 var categories = _db.GetCategories(prefix);
@@ -149,22 +155,39 @@ namespace IconBrowser.UI
             }
             finally
             {
-                _isLoading = false;
-                OnLoadingChanged?.Invoke(false);
-                if (ct.IsCancellationRequested)
-                    _pendingSearchQuery = null;
-                else
-                    DrainPendingSearch();
+                CompleteRequest(ct, requestVersion);
             }
         }
 
-        /// <summary>
-        /// Applies category and variant filters to the current entries.
-        /// Pure logic — no side effects beyond updating internal state and firing events.
-        /// </summary>
         public void ApplyFilters()
         {
-            // 1. Category filter
+            if (_hasGlobalSearchResults)
+            {
+                ApplyGlobalSearchFilters();
+                OnEntriesChanged?.Invoke();
+                return;
+            }
+
+            ApplyBrowseFilters();
+            OnEntriesChanged?.Invoke();
+        }
+
+        private void ApplyGlobalSearchFilters()
+        {
+            _filteredEntries = new List<IconEntry>(_allEntries);
+            _groupedEntries = new List<IconEntry>(_filteredEntries);
+            _variantMap = new Dictionary<string, List<IconEntry>>();
+
+            foreach (var entry in _groupedEntries)
+            {
+                entry.VariantCount = 1;
+                var (_, suffix) = VariantGrouper.ParseVariant(entry.Name, entry.Prefix);
+                entry.VariantLabel = suffix;
+            }
+        }
+
+        private void ApplyBrowseFilters()
+        {
             if (string.IsNullOrEmpty(_selectedCategory))
             {
                 _filteredEntries = new List<IconEntry>(_allEntries);
@@ -177,7 +200,6 @@ namespace IconBrowser.UI
                     .ToList();
             }
 
-            // 2. Variant filter
             if (!string.IsNullOrEmpty(_selectedVariant))
             {
                 if (_selectedVariant == "default")
@@ -194,7 +216,6 @@ namespace IconBrowser.UI
                 }
             }
 
-            // 3. Variant grouping (only when showing "All")
             if (string.IsNullOrEmpty(_selectedVariant))
             {
                 var (reps, map) = VariantGrouper.GroupEntries(_filteredEntries, _currentPrefix);
@@ -209,6 +230,7 @@ namespace IconBrowser.UI
                         entry.VariantLabel = suffix;
                     }
                 }
+
                 foreach (var rep in _groupedEntries)
                 {
                     var (baseName, _) = VariantGrouper.ParseVariant(rep.Name, _currentPrefix);
@@ -226,13 +248,8 @@ namespace IconBrowser.UI
                     entry.VariantLabel = suffix;
                 }
             }
-
-            OnEntriesChanged?.Invoke();
         }
 
-        /// <summary>
-        /// Syncs IsImported state of all entries with the database.
-        /// </summary>
         public void SyncImportState()
         {
             foreach (var entry in _allEntries)
@@ -242,9 +259,30 @@ namespace IconBrowser.UI
         private void DrainPendingSearch()
         {
             if (_pendingSearchQuery == null) return;
+
             var query = _pendingSearchQuery;
+            var requestVersion = _pendingSearchVersion;
             _pendingSearchQuery = null;
-            OnPendingSearchDrained?.Invoke(query);
+            _pendingSearchVersion = 0;
+            OnPendingSearchDrained?.Invoke(query, requestVersion);
+        }
+
+        private void CompleteRequest(CancellationToken ct, int requestVersion)
+        {
+            if (_loadingRequestVersion != requestVersion)
+                return;
+
+            _isLoading = false;
+            OnLoadingChanged?.Invoke(false);
+
+            if (ct.IsCancellationRequested)
+            {
+                _pendingSearchQuery = null;
+                _pendingSearchVersion = 0;
+                return;
+            }
+
+            DrainPendingSearch();
         }
     }
 }

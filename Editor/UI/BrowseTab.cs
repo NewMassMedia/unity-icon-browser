@@ -54,6 +54,7 @@ namespace IconBrowser.UI
         private readonly BrowseDataController _dc;
         private readonly IconOperationService _ops;
         private readonly IconGrid _grid;
+        private readonly SearchResultsView _globalResultsView;
         private readonly IconDetailPanel _detail;
         private readonly LibraryListView _libraryList;
         private ToastNotification _toast;
@@ -133,7 +134,7 @@ namespace IconBrowser.UI
         // Variant filter tabs
         private readonly VisualElement _variantBar;
 
-        private string _searchQuery = "";
+        private readonly SearchSession _globalSearchSession;
         private bool _isInitialized;
         private bool _isTabActive;
 
@@ -147,6 +148,7 @@ namespace IconBrowser.UI
         private CancellationTokenSource _cts = new();
 
         public event Action OnIconImported = delegate { };
+        public event Action OnGlobalSearchExitedViaLibraryClick = delegate { };
 
         /// <summary>
         /// Current library prefix.
@@ -165,6 +167,7 @@ namespace IconBrowser.UI
         {
             _dc.SyncImportState();
             _grid.RefreshPreviews();
+            _globalResultsView.RefreshItems();
         }
 
         public BrowseTab(IconDatabase db, SvgPreviewCache previewCache)
@@ -172,6 +175,7 @@ namespace IconBrowser.UI
             _db = db;
             _previewCache = previewCache;
             _dc = new BrowseDataController(db);
+            _globalSearchSession = new SearchSession(_dc.CurrentPrefix);
             UpdateProtectedPreviewPrefixes(_dc.CurrentPrefix);
             _ops = new IconOperationService(db, IconImporter.Default);
             AddToClassList("icon-tab");
@@ -234,6 +238,10 @@ namespace IconBrowser.UI
             _grid = new IconGrid { GroupByAlpha = true };
             centerColumn.Add(_grid);
 
+            _globalResultsView = new SearchResultsView();
+            _globalResultsView.style.display = DisplayStyle.None;
+            centerColumn.Add(_globalResultsView);
+
             // Detail panel (right)
             _detail = new IconDetailPanel();
             body.Add(_detail);
@@ -249,6 +257,12 @@ namespace IconBrowser.UI
             _grid.OnQuickImportClicked += OnImport;
             _grid.OnQuickDeleteClicked -= OnQuickDelete;
             _grid.OnQuickDeleteClicked += OnQuickDelete;
+            _globalResultsView.OnIconSelected -= OnSelected;
+            _globalResultsView.OnIconSelected += OnSelected;
+            _globalResultsView.OnQuickImportClicked -= OnImport;
+            _globalResultsView.OnQuickImportClicked += OnImport;
+            _globalResultsView.OnQuickDeleteClicked -= OnQuickDelete;
+            _globalResultsView.OnQuickDeleteClicked += OnQuickDelete;
             _detail.OnImportClicked -= OnImport;
             _detail.OnImportClicked += OnImport;
             _detail.OnDeleteClicked -= OnQuickDelete;
@@ -269,14 +283,144 @@ namespace IconBrowser.UI
         {
             foreach (var entry in _dc.FilteredEntries)
             {
-                if (entry.PreviewSprite != null) continue;
-                if (entry.IsImported && entry.LocalAsset != null) continue;
-                var sprite = _previewCache.GetPreview(entry.Prefix, entry.Name);
-                if (sprite != null) entry.PreviewSprite = sprite;
+                ApplyCachedPreview(entry);
+            }
+
+            if (_globalSearchSession.IsGlobalSearchMode)
+            {
+                var sections = SearchSectionBuilder.Build(
+                    _dc.GroupedEntries,
+                    _libraryDisplayOrder,
+                    BuildPrefixDisplayNameLookup());
+
+                SetBrowseContentMode(showGlobalSearchResults: true);
+                _globalResultsView.SetSections(sections);
+                _globalResultsView.RefreshItems();
+                EnsureGlobalSearchPreviewsLoaded(sections, _globalSearchSession.RequestVersion);
+                return;
             }
 
             _shouldImmediateLoad = true;
+            SetBrowseContentMode(showGlobalSearchResults: false);
+            _globalResultsView.SetSections(Array.Empty<SearchSection>());
             _grid.SetItems(_dc.GroupedEntries);
+        }
+
+        private void SetBrowseContentMode(bool showGlobalSearchResults)
+        {
+            _grid.style.display = showGlobalSearchResults ? DisplayStyle.None : DisplayStyle.Flex;
+            _globalResultsView.style.display = showGlobalSearchResults ? DisplayStyle.Flex : DisplayStyle.None;
+            _libraryInfoBar.style.display = showGlobalSearchResults ? DisplayStyle.None : _libraryInfoBar.style.display;
+            _variantBar.style.display = showGlobalSearchResults ? DisplayStyle.None : _variantBar.style.display;
+
+            if (showGlobalSearchResults)
+            {
+                _grid.ClearSelection();
+                return;
+            }
+
+            UpdateLibraryInfo(_dc.CurrentPrefix);
+            RebuildVariantBar(_dc.CurrentPrefix);
+            _globalResultsView.ClearSelection();
+        }
+
+        private void ApplyCachedPreview(IconEntry entry)
+        {
+            if (entry == null)
+                return;
+            if (entry.PreviewSprite != null)
+                return;
+            if (entry.IsImported && entry.LocalAsset != null)
+                return;
+
+            var sprite = _previewCache.GetPreview(entry.Prefix, entry.Name);
+            if (sprite != null)
+                entry.PreviewSprite = sprite;
+        }
+
+        private Dictionary<string, string> BuildPrefixDisplayNameLookup()
+        {
+            if (_allLibraries == null || _allLibraries.Count == 0)
+                return null;
+
+            return _allLibraries
+                .Where(lib => lib != null && !string.IsNullOrWhiteSpace(lib.Prefix))
+                .GroupBy(lib => lib.Prefix, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
+        }
+
+        private void EnsureGlobalSearchPreviewsLoaded(IReadOnlyList<SearchSection> sections, int requestVersion)
+        {
+            if (sections == null || sections.Count == 0)
+                return;
+
+            var missingNamesByPrefix = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            var allEntries = new List<IconEntry>();
+
+            foreach (var section in sections)
+            {
+                if (section?.Entries == null)
+                    continue;
+
+                foreach (var entry in section.Entries)
+                {
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.Prefix) || string.IsNullOrWhiteSpace(entry.Name))
+                        continue;
+
+                    allEntries.Add(entry);
+                    if (entry.IsImported && entry.LocalAsset != null)
+                        continue;
+
+                    var cached = _previewCache.GetPreview(entry.Prefix, entry.Name);
+                    if (cached != null)
+                    {
+                        entry.PreviewSprite = cached;
+                        continue;
+                    }
+
+                    if (!missingNamesByPrefix.TryGetValue(entry.Prefix, out var names))
+                    {
+                        names = new HashSet<string>(StringComparer.Ordinal);
+                        missingNamesByPrefix[entry.Prefix] = names;
+                    }
+
+                    names.Add(entry.Name);
+                }
+            }
+
+            _globalResultsView.RefreshItems();
+
+            if (missingNamesByPrefix.Count == 0)
+                return;
+
+            var ct = _cts.Token;
+            foreach (var pair in missingNamesByPrefix)
+            {
+                var prefix = pair.Key;
+                var names = pair.Value.ToList();
+                AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(
+                    _previewCache.LoadPreviewBatchAsync(prefix, names, () =>
+                    {
+                        if (ct.IsCancellationRequested || !_globalSearchSession.IsCurrentRequest(requestVersion))
+                            return;
+
+                        foreach (var entry in allEntries)
+                            ApplyCachedPreview(entry);
+
+                        _globalResultsView.RefreshItems();
+                        RefreshDetailPreviewIfVisible();
+                    })));
+            }
+        }
+
+        private void RefreshDetailPreviewIfVisible()
+        {
+            var currentEntry = _detail.CurrentEntry;
+            if (currentEntry == null)
+                return;
+
+            ApplyCachedPreview(currentEntry);
+            _detail.ShowEntry(currentEntry, FindVariants(currentEntry), browseMode: true);
         }
 
         /// <summary>
@@ -345,26 +489,28 @@ namespace IconBrowser.UI
 
         private void OnLibraryClicked(string prefix)
         {
-            if (prefix == _dc.CurrentPrefix && _isInitialized) return;
+            if (prefix == _dc.CurrentPrefix && _isInitialized && !_globalSearchSession.IsGlobalSearchMode) return;
 
-            // Cancel any in-flight async operations from the previous library
-            ResetRequestCts();
-
+            var wasInGlobalSearchMode = _globalSearchSession.IsGlobalSearchMode;
             _libraryList.HighlightLibrary(prefix);
             _detail.Clear();
+            SetBrowseContentMode(showGlobalSearchResults: false);
+            _globalResultsView.SetSections(Array.Empty<SearchSection>());
             _previewCache.ClearMemoryCache();
             _tooltipPrefetchQueue.Clear();
             _tooltipPrefetchQueued.Clear();
             _prefetchGeneration++;
             _lastHoveredPrefix = prefix;
             UpdateProtectedPreviewPrefixes(prefix);
-            _searchQuery = "";
             _isInitialized = true;
 
             UpdateLibraryInfo(prefix);
             RebuildVariantBar(prefix);
-            var ct = _cts.Token;
-            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SetPrefixAndLoadAsync(prefix, ct)));
+            var requestVersion = _globalSearchSession.BeginBrowseRequest(prefix);
+            if (wasInGlobalSearchMode)
+                OnGlobalSearchExitedViaLibraryClick();
+
+            StartSelectedLibraryLoad(prefix, requestVersion);
         }
 
         private void UpdateLibraryInfo(string prefix)
@@ -1041,8 +1187,7 @@ namespace IconBrowser.UI
             _isInitialized = true;
             UpdateLibraryInfo(_dc.CurrentPrefix);
             RebuildVariantBar(_dc.CurrentPrefix);
-            var ct = _cts.Token;
-            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SetPrefixAndLoadAsync(_dc.CurrentPrefix, ct)));
+            StartSelectedLibraryLoad(_dc.CurrentPrefix, _globalSearchSession.BeginBrowseRequest(_dc.CurrentPrefix));
         }
 
         /// <summary>
@@ -1050,9 +1195,9 @@ namespace IconBrowser.UI
         /// </summary>
         public void SetLibrary(string prefix)
         {
-            ResetRequestCts();
-            _searchQuery = "";
             _detail.Clear();
+            SetBrowseContentMode(showGlobalSearchResults: false);
+            _globalResultsView.SetSections(Array.Empty<SearchSection>());
             _previewCache.ClearMemoryCache();
             _tooltipPrefetchQueue.Clear();
             _tooltipPrefetchQueued.Clear();
@@ -1062,8 +1207,7 @@ namespace IconBrowser.UI
             _libraryList.HighlightLibrary(prefix);
             UpdateLibraryInfo(prefix);
             RebuildVariantBar(prefix);
-            var ct = _cts.Token;
-            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SetPrefixAndLoadAsync(prefix, ct)));
+            StartSelectedLibraryLoad(prefix, _globalSearchSession.BeginBrowseRequest(prefix));
         }
 
         private void BuildAlwaysWarmLibraryPrefixSet(List<IconLibrary> libraries)
@@ -1201,23 +1345,34 @@ namespace IconBrowser.UI
         /// </summary>
         public void Search(string query)
         {
-            _searchQuery = query;
-
-            // Cancel previous debounce
+            _globalSearchSession.UpdateDraftQuery(query);
             _debounceHandle?.Pause();
+            _debounceHandle = null;
 
             if (string.IsNullOrWhiteSpace(query))
             {
-                // Empty query — show full collection
-                var ct = _cts.Token;
-                AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.LoadCollectionAsync(_dc.CurrentPrefix, ct)));
+                var isReturningToBrowse = _globalSearchSession.TryReturnToBrowse(_dc.CurrentPrefix);
+                var requestVersion = isReturningToBrowse
+                    ? _globalSearchSession.RequestVersion
+                    : _globalSearchSession.BeginBrowseRequest(_dc.CurrentPrefix);
+
+                _detail.Clear();
+                SetBrowseContentMode(showGlobalSearchResults: false);
+                _globalResultsView.SetSections(Array.Empty<SearchSection>());
+                StartSelectedLibraryLoad(
+                    _globalSearchSession.LastBrowsePrefix,
+                    requestVersion,
+                    preserveBrowseFilters: isReturningToBrowse);
                 return;
             }
 
-            var token = _cts.Token;
-            _debounceHandle = schedule.Execute(() =>
-                    AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SearchAsync(query, token))))
-                .StartingIn(IconBrowserConstants.SEARCH_DEBOUNCE_MS);
+            if (!_globalSearchSession.TryCommitGlobalSearch(_dc.CurrentPrefix))
+                return;
+
+            _detail.Clear();
+            SetBrowseContentMode(showGlobalSearchResults: true);
+            _globalResultsView.SetSections(Array.Empty<SearchSection>());
+            StartGlobalSearch(_globalSearchSession.CommittedQuery, _globalSearchSession.RequestVersion);
         }
 
         /// <summary>
@@ -1230,16 +1385,41 @@ namespace IconBrowser.UI
             return variants;
         }
 
+        private List<IconEntry> FindVariants(IconEntry entry)
+        {
+            if (entry == null)
+                return null;
+
+            if (_globalSearchSession.IsGlobalSearchMode)
+                return null;
+
+            if (string.Equals(entry.Prefix, _dc.CurrentPrefix, StringComparison.OrdinalIgnoreCase))
+                return FindVariants(entry.Name);
+
+            var (baseName, _) = VariantGrouper.ParseVariant(entry.Name, entry.Prefix);
+            var variants = _dc.AllEntries
+                .Where(candidate => candidate != null
+                    && string.Equals(candidate.Prefix, entry.Prefix, StringComparison.OrdinalIgnoreCase))
+                .Where(candidate => VariantGrouper.ParseVariant(candidate.Name, entry.Prefix).baseName == baseName)
+                .ToList();
+
+            if (variants.Count <= 1)
+                return null;
+
+            foreach (var variant in variants)
+            {
+                var (_, suffix) = VariantGrouper.ParseVariant(variant.Name, entry.Prefix);
+                variant.VariantLabel = suffix;
+            }
+
+            return variants;
+        }
+
         private void OnSelected(IconEntry entry)
         {
-            // Try to set preview sprite from atlas cache
-            var preview = _previewCache.GetPreview(entry.Prefix, entry.Name);
-            if (preview != null)
-                entry.PreviewSprite = preview;
+            ApplyCachedPreview(entry);
+            var variants = FindVariants(entry);
 
-            var variants = FindVariants(entry.Name);
-
-            // Preload all variant previews so the variant strip shows icons
             if (variants != null && variants.Count > 1)
             {
                 var ct = _cts.Token;
@@ -1254,10 +1434,12 @@ namespace IconBrowser.UI
             _detail.HandleSelectionChanged(entries, OnSelected);
         }
 
-        private void OnPendingSearchDrained(string query)
+        private void OnPendingSearchDrained(string query, int requestVersion)
         {
-            var ct = _cts.Token;
-            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.SearchAsync(query, ct)));
+            if (!_globalSearchSession.IsCurrentRequest(requestVersion))
+                return;
+
+            StartGlobalSearch(query, requestVersion);
         }
 
         private void ResetRequestCts()
@@ -1265,6 +1447,22 @@ namespace IconBrowser.UI
             _cts.Cancel();
             _cts.Dispose();
             _cts = new CancellationTokenSource();
+        }
+
+        private void StartSelectedLibraryLoad(string prefix, int requestVersion, bool preserveBrowseFilters = false)
+        {
+            _debounceHandle?.Pause();
+            ResetRequestCts();
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(
+                _dc.SetPrefixAndLoadAsync(prefix, requestVersion, ct, preserveBrowseFilters)));
+        }
+
+        private void StartGlobalSearch(string query, int requestVersion)
+        {
+            ResetRequestCts();
+            var ct = _cts.Token;
+            AsyncHelper.FireAndForget(IgnoreOperationCanceledAsync(_dc.ExecuteGlobalSearchAsync(query, requestVersion, ct)));
         }
 
         private static async Task IgnoreOperationCanceledAsync(Task task)
@@ -1338,6 +1536,9 @@ namespace IconBrowser.UI
             _grid.OnSelectionChanged -= OnGridSelectionChanged;
             _grid.OnQuickImportClicked -= OnImport;
             _grid.OnQuickDeleteClicked -= OnQuickDelete;
+            _globalResultsView.OnIconSelected -= OnSelected;
+            _globalResultsView.OnQuickImportClicked -= OnImport;
+            _globalResultsView.OnQuickDeleteClicked -= OnQuickDelete;
             _detail.OnImportClicked -= OnImport;
             _detail.OnDeleteClicked -= OnQuickDelete;
             _detail.OnVariantSelected -= OnVariantSelected;

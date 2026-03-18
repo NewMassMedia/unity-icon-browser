@@ -15,6 +15,10 @@ namespace IconBrowser.UI
         private readonly SvgPreviewCache _previewCache;
         private readonly TextField _pathField;
         private readonly HelpBox _resourcePathWarning;
+        private readonly PopupField<string> _filterField;
+        private readonly PopupField<string> _sampleField;
+        private readonly List<string> _filterChoices = new() { "Point", "Bilinear", "Trilinear" };
+        private readonly List<string> _sampleChoices = new() { "1", "2", "4", "8" };
 
         /// <summary>
         /// Fired when the import path is changed.
@@ -85,13 +89,12 @@ namespace IconBrowser.UI
             filterLabel.AddToClassList("settings-tab__label");
             filterRow.Add(filterLabel);
 
-            var filterChoices = new List<string> { "Point", "Bilinear", "Trilinear" };
-            var filterField = new PopupField<string>(filterChoices, IconBrowserSettings.FilterMode);
-            filterField.RegisterValueChangedCallback(evt =>
+            _filterField = new PopupField<string>(_filterChoices, IconBrowserSettings.FilterMode);
+            _filterField.RegisterValueChangedCallback(evt =>
             {
-                IconBrowserSettings.FilterMode = filterChoices.IndexOf(evt.newValue);
+                IconBrowserSettings.FilterMode = _filterChoices.IndexOf(evt.newValue);
             });
-            filterRow.Add(filterField);
+            filterRow.Add(_filterField);
 
             // Sample Count
             var sampleRow = new VisualElement();
@@ -102,16 +105,27 @@ namespace IconBrowser.UI
             sampleLabel.AddToClassList("settings-tab__label");
             sampleRow.Add(sampleLabel);
 
-            var sampleChoices = new List<string> { "1", "2", "4", "8" };
-            var sampleIndex = sampleChoices.IndexOf(IconBrowserSettings.SampleCount.ToString());
+            var sampleIndex = _sampleChoices.IndexOf(IconBrowserSettings.SampleCount.ToString());
             if (sampleIndex < 0) sampleIndex = 2; // default to "4"
-            var sampleField = new PopupField<string>(sampleChoices, sampleIndex);
-            sampleField.RegisterValueChangedCallback(evt =>
+            _sampleField = new PopupField<string>(_sampleChoices, sampleIndex);
+            _sampleField.RegisterValueChangedCallback(evt =>
             {
                 if (int.TryParse(evt.newValue, out var val))
                     IconBrowserSettings.SampleCount = val;
             });
-            sampleRow.Add(sampleField);
+            sampleRow.Add(_sampleField);
+
+            var resetRow = new VisualElement();
+            resetRow.AddToClassList("settings-tab__row");
+            importSection.Add(resetRow);
+
+            var resetLabel = new Label("Settings");
+            resetLabel.AddToClassList("settings-tab__label");
+            resetRow.Add(resetLabel);
+
+            var resetBtn = new Button(ResetSettings) { text = "Reset Defaults" };
+            resetBtn.AddToClassList("settings-tab__change-btn");
+            resetRow.Add(resetBtn);
 
             // --- Cache Settings ---
             var cacheSection = new VisualElement();
@@ -186,6 +200,34 @@ namespace IconBrowser.UI
             var normalizedPath = (path ?? string.Empty).Replace("\\", "/");
             var hasResourcesSegment = normalizedPath.Contains("/Resources/");
             _resourcePathWarning.style.display = hasResourcesSegment ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+
+        private void ResetSettings()
+        {
+            if (!EditorUtility.DisplayDialog(
+                    "Reset Settings",
+                    "Reset import path, filter mode, and sample count to their defaults?",
+                    "Reset",
+                    "Cancel"))
+                return;
+
+            IconBrowserSettings.ResetToDefaults();
+            RefreshSettingsUi();
+            OnImportPathChanged?.Invoke();
+        }
+
+        private void RefreshSettingsUi()
+        {
+            _pathField.value = IconBrowserSettings.IconsPath;
+            UpdateResourcePathWarning(_pathField.value);
+
+            var filterIndex = Mathf.Clamp(IconBrowserSettings.FilterMode, 0, _filterChoices.Count - 1);
+            _filterField.SetValueWithoutNotify(_filterChoices[filterIndex]);
+
+            var sampleIndex = _sampleChoices.IndexOf(IconBrowserSettings.SampleCount.ToString());
+            if (sampleIndex < 0)
+                sampleIndex = 2;
+            _sampleField.SetValueWithoutNotify(_sampleChoices[sampleIndex]);
         }
     }
 }
