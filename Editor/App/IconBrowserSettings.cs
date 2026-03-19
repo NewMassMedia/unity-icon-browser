@@ -4,11 +4,20 @@ namespace IconBrowser
 {
     /// <summary>
     /// EditorPrefs-based settings for the Icon Browser.
+    /// Keys are scoped per project via Application.dataPath hash to avoid
+    /// cross-project contamination on first install.
     /// </summary>
     internal static class IconBrowserSettings
     {
-        private const string PREF_ICONS_PATH = "IconBrowser_IconsPath";
         private const string DEFAULT_PATH = "Assets/Resources/Icon";
+
+        private static string ProjectKey(string key) =>
+            $"{key}_{Application.dataPath.GetHashCode()}";
+
+        private static string PREF_ICONS_PATH => ProjectKey("IconBrowser_IconsPath");
+        private static string PREF_FILTER_MODE => ProjectKey("IconBrowser_FilterMode");
+        private static string PREF_SAMPLE_COUNT => ProjectKey("IconBrowser_SampleCount");
+        private static string PREF_VERBOSE_CACHE_LOGS => ProjectKey("IconBrowser_VerboseCacheLogs");
 
         /// <summary>
         /// Target folder for imported icons.
@@ -18,10 +27,6 @@ namespace IconBrowser
             get => EditorPrefs.GetString(PREF_ICONS_PATH, DEFAULT_PATH);
             set => EditorPrefs.SetString(PREF_ICONS_PATH, value);
         }
-
-        private const string PREF_FILTER_MODE = "IconBrowser_FilterMode";
-        private const string PREF_SAMPLE_COUNT = "IconBrowser_SampleCount";
-        private const string PREF_VERBOSE_CACHE_LOGS = "IconBrowser_VerboseCacheLogs";
 
         /// <summary>
         /// Texture filter mode: 0 = Point, 1 = Bilinear, 2 = Trilinear.

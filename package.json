@@ -1,6 +1,6 @@
 {
   "name": "com.maemi.iconbrowser",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "displayName": "Icon Browser",
   "description": "Iconify-powered icon browser for Unity. Search, preview, and import 200K+ open-source icons.",
   "unity": "6000.0",
