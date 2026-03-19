@@ -219,6 +219,8 @@ namespace IconBrowser.Import
                     if (_queue.Count == 0)
                     {
                         _isProcessing = false;
+                        _isTempStagingPrepared = false;
+                        CleanupTempAssets();
                         return;
                     }
 

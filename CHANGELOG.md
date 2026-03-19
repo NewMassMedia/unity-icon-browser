@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.3] - 2026-03-19
+
+### Fixed
+- `_IconBrowserTemp` is now automatically deleted after all queued preview batches are processed, eliminating the leftover folder after atlas generation.
+- Added `[InitializeOnLoad]` startup cleanup to remove any `_IconBrowserTemp` left behind from a previous Unity crash or force quit.
+
 ## [1.3.1] - 2026-03-18
 
 ### Changed

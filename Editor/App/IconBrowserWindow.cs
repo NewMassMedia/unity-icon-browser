@@ -13,6 +13,19 @@ using IconBrowser.UI;
 namespace IconBrowser
 {
     /// <summary>
+    /// Cleans up leftover temp assets on editor startup (e.g. after Unity crash or force quit).
+    /// </summary>
+    [InitializeOnLoad]
+    internal static class IconBrowserStartupCleanup
+    {
+        static IconBrowserStartupCleanup()
+        {
+            if (AssetDatabase.IsValidFolder(IconBrowserConstants.TEMP_ASSET_PATH))
+                AssetDatabase.DeleteAsset(IconBrowserConstants.TEMP_ASSET_PATH);
+        }
+    }
+
+    /// <summary>
     /// Icon Browser editor window — search, browse, preview, and import icons from Iconify.
     /// </summary>
     public class IconBrowserWindow : EditorWindow
