@@ -87,16 +87,17 @@ namespace IconBrowser.Data
 
         private static string ExtractPrefixFromPath(string assetPath)
         {
-            var iconsPath = IconBrowserSettings.IconsPath.Replace("\\", "/").TrimEnd('/');
-            var normalized = assetPath.Replace("\\", "/");
-            if (normalized.StartsWith(iconsPath + "/"))
-            {
-                var relative = normalized.Substring(iconsPath.Length + 1); // "lucide/check.svg"
-                var slash = relative.IndexOf('/');
-                if (slash > 0)
-                    return relative.Substring(0, slash); // "lucide"
-            }
-            return "unknown";
+            var normalized = assetPath.Replace("\\", "/").TrimEnd('/');
+            var lastSlash = normalized.LastIndexOf('/');
+            if (lastSlash <= 0)
+                return "unknown";
+
+            var parentPath = normalized.Substring(0, lastSlash);
+            var parentSlash = parentPath.LastIndexOf('/');
+            if (parentSlash < 0 || parentSlash == parentPath.Length - 1)
+                return "unknown";
+
+            return parentPath.Substring(parentSlash + 1);
         }
 
         private static bool IsExcludedExternalPath(string assetPath)
